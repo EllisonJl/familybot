@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# 忽略虚拟环境目录
+.venv/
