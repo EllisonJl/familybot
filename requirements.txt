@@ -1,9 +1,10 @@
-# 基础
+# 基础依赖
 openai>=1.40.0
 requests>=2.31.0
 python-dotenv>=1.0.1
+dashscope>=1.16.0
 
-# 异步支持（如果后面用到）
+# 异步支持（可选）
 httpx>=0.27.0
 
 # 音频处理（ASR + TTS）
