@@ -1,33 +1,36 @@
-HELP.md
-target/
-.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
 
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
+# pipenv / poetry / pyenv
+Pipfile.lock
+poetry.lock
 
-### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
+# 数据库文件
+*.db
+*.sqlite3
 
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
+# 日志文件
+*.log
 
-### VS Code ###
-.vscode/
+# 交互缓存/临时文件
+*.swp
+*.bak
+*.tmp
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+
+# 虚拟环境（如果你用不同名称）
+env/
+venv/
+
+# macOS 特有文件
+.DS_Store
+
+# Python虚拟环境
+.venv/
+venv/
+env/
