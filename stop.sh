@@ -1,77 +1,81 @@
 #!/bin/bash
 
-# FamilyBot 停止脚本
-# 用于停止所有服务
+echo "🛑 Stopping FamilyBot services..."
+echo "================================="
 
-echo "⏹️  停止 FamilyBot 系统..."
-
-# 停止服务
-stop_service() {
-    local service_name=$1
-    local pid_file=$2
+stop_service_by_port() {
+    local port=$1
+    local service_name=$2
+    local pids=$(lsof -ti:$port 2>/dev/null)
     
-    if [ -f "$pid_file" ]; then
-        local pid=$(cat "$pid_file")
-        if ps -p $pid > /dev/null 2>&1; then
-            echo "⏹️  停止 $service_name (PID: $pid)..."
-            kill $pid
-            
-            # 等待进程结束
-            for i in {1..10}; do
-                if ! ps -p $pid > /dev/null 2>&1; then
-                    echo "✅ $service_name 已停止"
-                    break
-                fi
-                sleep 1
-            done
-            
-            # 如果进程仍在运行，强制杀死
-            if ps -p $pid > /dev/null 2>&1; then
-                echo "🔥 强制停止 $service_name..."
-                kill -9 $pid
-            fi
-        else
-            echo "ℹ️  $service_name 未运行"
+    if [ -n "$pids" ]; then
+        echo "🔸 Stopping $service_name (port $port)..."
+        echo "$pids" | xargs kill -TERM 2>/dev/null
+        sleep 3
+        
+        # 如果进程仍在运行，强制终止
+        local remaining_pids=$(lsof -ti:$port 2>/dev/null)
+        if [ -n "$remaining_pids" ]; then
+            echo "🔹 Force killing $service_name..."
+            echo "$remaining_pids" | xargs kill -9 2>/dev/null
         fi
-        rm -f "$pid_file"
+        
+        # 验证是否已停止
+        if ! lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
+            echo "✅ $service_name stopped successfully"
+        else
+            echo "❌ Failed to stop $service_name"
+        fi
     else
-        echo "ℹ️  $service_name PID文件不存在"
+        echo "ℹ️  $service_name (port $port) is not running"
     fi
 }
 
-# 停止所有服务
-stop_all_services() {
-    stop_service "前端服务" "logs/frontend.pid"
-    stop_service "后端服务" "logs/backend.pid"
-    stop_service "AI Agent服务" "logs/ai_agent.pid"
-}
+# 如果有PID文件，按照记录的PID停止
+if [ -f pids.txt ]; then
+    echo "📄 Found pids.txt, stopping services by recorded PIDs..."
+    while IFS= read -r line; do
+        PID=$(echo $line | awk '{print $NF}')
+        SERVICE_NAME=$(echo $line | awk '{print $1}')
+        if [ -n "$PID" ]; then
+            echo "🔸 Stopping $SERVICE_NAME with PID $PID..."
+            kill $PID 2>/dev/null
+            sleep 2
+            
+            # 检查进程是否仍在运行
+            if kill -0 $PID 2>/dev/null; then
+                echo "🔹 Force killing $SERVICE_NAME (PID $PID)..."
+                kill -9 $PID 2>/dev/null
+            fi
+            
+            if ! kill -0 $PID 2>/dev/null; then
+                echo "✅ $SERVICE_NAME stopped successfully"
+            else
+                echo "❌ Failed to stop $SERVICE_NAME"
+            fi
+        fi
+    done < pids.txt
+    rm pids.txt
+    echo "🗑️  Removed pids.txt"
+else
+    echo "📄 No pids.txt found, stopping services by port..."
+fi
 
-# 清理资源
-cleanup() {
-    echo "🧹 清理资源..."
-    
-    # 查找并停止可能的遗留进程
-    pkill -f "mvn spring-boot:run" 2>/dev/null || true
-    pkill -f "ai_agent.main" 2>/dev/null || true
-    pkill -f "vite" 2>/dev/null || true
-    
-    # 清理PID文件
-    rm -f logs/*.pid
-    
-    echo "✅ 清理完成"
-}
+# 按端口停止服务（兜底机制）
+stop_service_by_port 5173 "Frontend (Vue)"
+stop_service_by_port 8080 "Backend (Spring Boot)"  
+stop_service_by_port 8001 "AI Agent (FastAPI)"
 
-# 主函数
-main() {
-    stop_all_services
-    cleanup
-    
-    echo ""
-    echo "🎉 FamilyBot 系统已完全停止"
-    echo ""
-    echo "🚀 重新启动: ./start.sh"
-    echo "📊 查看状态: ./status.sh"
-}
+# 清理可能的Python进程
+pkill -f "uvicorn.*main:app" 2>/dev/null && echo "🔸 Cleaned up uvicorn processes"
+pkill -f "spring-boot:run" 2>/dev/null && echo "🔸 Cleaned up Spring Boot processes"
+pkill -f "vite.*dev" 2>/dev/null && echo "🔸 Cleaned up Vite dev processes"
 
-# 执行主函数
-main
+echo ""
+echo "🎯 All FamilyBot services stopped"
+echo "================================="
+
+# 最后检查状态
+sleep 2
+echo "🔍 Final status check:"
+./status.sh

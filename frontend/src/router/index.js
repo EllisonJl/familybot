@@ -1,18 +1,18 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import ChatView from '@/views/ChatView.vue'
+import ChatView from '../views/ChatView.vue'
 
 const routes = [
   {
     path: '/',
-    name: 'home',
+    name: 'Home',
     redirect: '/chat'
   },
   {
     path: '/chat',
-    name: 'chat',
+    name: 'Chat',
     component: ChatView,
     meta: {
-      title: 'FamilyBot - AI陪伴聊天'
+      title: 'FamilyBot - AI家庭陪伴助手'
     }
   }
 ]
@@ -22,11 +22,13 @@ const router = createRouter({
   routes
 })
 
-// 路由守卫 - 设置页面标题
-router.beforeEach((to) => {
+// 路由守卫
+router.beforeEach((to, from, next) => {
+  // 设置页面标题
   if (to.meta.title) {
     document.title = to.meta.title
   }
+  next()
 })
 
 export default router

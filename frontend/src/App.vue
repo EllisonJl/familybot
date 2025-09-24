@@ -11,83 +11,88 @@ export default {
 </script>
 
 <style>
+/* 全局样式重置 */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+html, body {
+  height: 100%;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 
+               'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #f8fafc;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 #app {
   height: 100vh;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-/* 全局滚动条样式 */
+/* 自定义滚动条 */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* 动画效果 */
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+}
+
+.slide-up-enter-active, .slide-up-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-up-enter-from, .slide-up-leave-to {
+  transform: translateY(20px);
+  opacity: 0;
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .character-header {
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1rem;
-  }
-  
-  .header-actions {
-    order: -1;
-    justify-content: center;
-  }
-  
-  .character-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .message-content {
-    max-width: 85% !important;
-  }
-  
-  .input-area {
-    padding: 1rem;
+  .mobile-hidden {
+    display: none !important;
   }
 }
 
-@media (max-width: 480px) {
-  .character-selector {
-    margin: 1rem;
-    padding: 1rem;
-  }
-  
-  .input-box {
-    gap: 0.25rem;
-  }
-  
-  .voice-btn, .send-btn {
-    width: 45px;
-    height: 45px;
-  }
+/* 元素加号组件样式覆盖 */
+.el-button {
+  border-radius: 8px;
+}
+
+.el-card {
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.el-input__wrapper {
+  border-radius: 8px;
+}
+
+.el-avatar {
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 </style>

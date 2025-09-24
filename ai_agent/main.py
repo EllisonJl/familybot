@@ -12,9 +12,9 @@ import asyncio
 import os
 from datetime import datetime
 
-from .config import Config
-from .graph.conversation_graph import ConversationGraph
-from .services.audio_service import audio_service
+from config import Config
+from graph.conversation_graph import ConversationGraph
+from services.audio_service import audio_service
 
 
 # === 数据模型 ===

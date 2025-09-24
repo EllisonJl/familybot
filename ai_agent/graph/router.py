@@ -8,9 +8,9 @@ from typing import Literal, cast
 from openai import OpenAI
 from langchain.schema import HumanMessage
 
-from ..config import Config
-from ..models.state import ConversationState, Router, IntentAnalysisResult
-from ..prompts.router_prompts import ROUTER_SYSTEM_PROMPT, INTENT_ANALYSIS_PROMPT
+from config import Config
+from models.state import ConversationState, Router
+from prompts.router_prompts import ROUTER_SYSTEM_PROMPT
 
 
 class FamilyBotRouter:
@@ -154,7 +154,7 @@ class FamilyBotRouter:
             print("📝 路由到一般回复处理")
             return "general_response"
     
-    async def analyze_intent_detailed(self, state: ConversationState) -> IntentAnalysisResult:
+    async def analyze_intent_detailed(self, state: ConversationState) -> dict:
         """
         详细的意图分析（用于复杂场景）
         

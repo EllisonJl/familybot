@@ -15,7 +15,7 @@ import dashscope
 from dashscope.audio.tts import SpeechSynthesizer
 import asyncio
 
-from ..config import Config
+from config import Config
 
 
 class AudioService:

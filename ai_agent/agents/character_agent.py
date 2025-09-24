@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 import json
 from openai import OpenAI
-from ..config import Config, CHARACTER_CONFIGS
+from config import Config, CHARACTER_CONFIGS
 
 
 class CharacterAgent:

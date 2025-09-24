@@ -10,12 +10,13 @@ import json
 import random
 from datetime import datetime
 
-from ..agents.character_agent import CharacterManager
-from ..memory.conversation_memory import ConversationMemory
-from ..models.state import ConversationState, Router
-from ..graph.router import router
-from ..rag.graph_rag import graph_rag
-from ..services.audio_service import audio_service
+from agents.character_agent import CharacterManager
+from memory.conversation_memory import ConversationMemory
+from models.state import ConversationState, Router
+from graph.router import router
+from rag.graph_rag import graph_rag
+from services.audio_service import audio_service
+from reasoning.cot_processor import cot_processor
 
 
 class ConversationGraph:
@@ -152,46 +153,46 @@ class ConversationGraph:
         # 这个节点实际上不会被执行，路由逻辑在条件边中
         return state
     
-    def _xiyang_character_node(self, state: ConversationState) -> ConversationState:
+    async def _xiyang_character_node(self, state: ConversationState) -> ConversationState:
         """喜羊羊（儿子）角色节点"""
-        return self._generate_character_response(state, "xiyang")
+        return await self._generate_character_response(state, "xiyang")
     
-    def _meiyang_character_node(self, state: ConversationState) -> ConversationState:
+    async def _meiyang_character_node(self, state: ConversationState) -> ConversationState:
         """美羊羊（女儿）角色节点"""
-        return self._generate_character_response(state, "meiyang")
+        return await self._generate_character_response(state, "meiyang")
     
-    def _lanyang_character_node(self, state: ConversationState) -> ConversationState:
+    async def _lanyang_character_node(self, state: ConversationState) -> ConversationState:
         """懒羊羊（孙子）角色节点"""
-        return self._generate_character_response(state, "lanyang")
+        return await self._generate_character_response(state, "lanyang")
     
-    def _general_response_node(self, state: ConversationState) -> ConversationState:
+    async def _general_response_node(self, state: ConversationState) -> ConversationState:
         """通用回复节点"""
         # 根据上下文选择合适的角色
         preferred_character = state.selected_character or "xiyang"
-        return self._generate_character_response(state, preferred_character)
+        return await self._generate_character_response(state, preferred_character)
     
-    def _health_concern_node(self, state: ConversationState) -> ConversationState:
+    async def _health_concern_node(self, state: ConversationState) -> ConversationState:
         """健康关注处理节点"""
         # 健康问题优先使用儿子角色（更理性和专业）
         state.context["response_type"] = "health_focused"
-        return self._generate_character_response(state, "xiyang")
+        return await self._generate_character_response(state, "xiyang")
     
-    def _emotional_support_node(self, state: ConversationState) -> ConversationState:
+    async def _emotional_support_node(self, state: ConversationState) -> ConversationState:
         """情感支持处理节点"""
         # 情感支持优先使用女儿角色（更温暖贴心）
         state.context["response_type"] = "emotional_support"
-        return self._generate_character_response(state, "meiyang")
+        return await self._generate_character_response(state, "meiyang")
     
-    def _knowledge_query_node(self, state: ConversationState) -> ConversationState:
+    async def _knowledge_query_node(self, state: ConversationState) -> ConversationState:
         """知识查询处理节点"""
         # 知识查询需要更多理性思考，使用儿子角色
         state.context["response_type"] = "knowledge_query"
         state.context["needs_rag"] = True
-        return self._generate_character_response(state, "xiyang")
+        return await self._generate_character_response(state, "xiyang")
     
-    def _generate_character_response(self, state: ConversationState, character_id: str) -> ConversationState:
+    async def _generate_character_response(self, state: ConversationState, character_id: str) -> ConversationState:
         """
-        生成角色回应的通用方法
+        生成角色回应的通用方法（支持CoT推理）
         
         Args:
             state: 对话状态
@@ -213,12 +214,46 @@ class ConversationGraph:
                 "response_type": state.context.get("response_type", "normal")
             }
             
-            # 生成角色回应
+            # Step 1: 执行CoT推理（仅对成年角色）
+            cot_result = await cot_processor.perform_cot_reasoning(
+                character_id=character_id,
+                user_message=state.user_input,
+                context=user_context
+            )
+            
+            # 将CoT结果添加到上下文
+            if cot_result.get("use_cot", False):
+                user_context["cot_analysis"] = cot_result["final_analysis"]
+                user_context["reasoning_depth"] = "deep_thinking"
+                
+                # 保存推理过程到状态中
+                state.context["cot_reasoning"] = {
+                    "steps_count": len(cot_result.get("reasoning_steps", [])),
+                    "analysis": cot_result["final_analysis"],
+                    "character_focus": cot_result.get("character_focus", [])
+                }
+                
+                print(f"🧠 {character_id} 完成CoT推理，{len(cot_result.get('reasoning_steps', []))} 个思考步骤")
+            
+            # Step 2: 生成角色回应
             response_data = self.character_manager.generate_response(
                 user_message=state.user_input,
                 character_id=character_id,
                 user_context=user_context
             )
+            
+            # Step 3: 用CoT结果增强回复
+            if cot_result.get("use_cot", False):
+                enhanced_response = cot_processor.enhance_response_with_cot(
+                    original_response=response_data["response"],
+                    cot_result=cot_result,
+                    character_id=character_id
+                )
+                response_data["response"] = enhanced_response
+                
+                # 标记为CoT增强的回复
+                response_data["enhanced_by_cot"] = True
+                print(f"✨ 回复已通过CoT推理增强")
             
             # 更新状态
             state.assistant_response = response_data["response"]

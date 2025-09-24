@@ -12,8 +12,8 @@ from datetime import datetime
 import numpy as np
 from openai import OpenAI
 
-from ..config import Config
-from ..models.state import GraphRAGResult
+from config import Config
+# from models.state import GraphRAGResult
 
 
 @dataclass
@@ -277,7 +277,7 @@ class GraphRAGSystem:
             
             conn.commit()
     
-    async def query_knowledge(self, query: str, domain: Optional[str] = None, limit: int = 5) -> GraphRAGResult:
+    async def query_knowledge(self, query: str, domain: Optional[str] = None, limit: int = 5) -> dict:
         """
         查询知识图谱
         

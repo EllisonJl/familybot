@@ -1,209 +1,134 @@
-/**
- * 聊天服务 - 封装与后端API的交互
- */
+import axios from 'axios'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1'
+// 创建axios实例
+const api = axios.create({
+  baseURL: '/api/v1',
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json'
+  }
+})
 
-class ChatService {
-  /**
-   * 发送聊天消息
-   */
-  async sendMessage(data) {
+// 请求拦截器
+api.interceptors.request.use(
+  config => {
+    console.log('发送请求:', config.method?.toUpperCase(), config.url)
+    return config
+  },
+  error => {
+    console.error('请求错误:', error)
+    return Promise.reject(error)
+  }
+)
+
+// 响应拦截器
+api.interceptors.response.use(
+  response => {
+    console.log('收到响应:', response.status, response.config.url)
+    return response
+  },
+  error => {
+    console.error('响应错误:', error.response?.status, error.message)
+    
+    // 统一错误处理
+    if (error.response?.status === 404) {
+      console.error('API端点不存在:', error.config.url)
+    } else if (error.response?.status >= 500) {
+      console.error('服务器内部错误')
+    }
+    
+    return Promise.reject(error)
+  }
+)
+
+const chatService = {
+  // 发送文本消息
+  sendTextMessage: async (userId, characterId, message) => {
     try {
-      const response = await fetch(`${BASE_URL}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data)
+      console.log('发送文本消息:', { userId, characterId, message })
+      const response = await api.post('/chat', {
+        userId,
+        characterId,
+        message
       })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      return await response.json()
+      return response.data
     } catch (error) {
-      console.error('发送消息失败:', error)
+      console.error('发送文本消息失败:', error)
       throw error
     }
-  }
+  },
 
-  /**
-   * 获取所有角色
-   */
-  async getCharacters() {
+  // 发送语音消息
+  sendAudioMessage: async (userId, characterId, audioBase64) => {
     try {
-      const response = await fetch(`${BASE_URL}/characters`)
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
+      console.log('发送语音消息:', { userId, characterId })
+      const response = await api.post('/chat', {
+        userId,
+        characterId,
+        audioBase64
+      })
+      return response.data
+    } catch (error) {
+      console.error('发送语音消息失败:', error)
+      throw error
+    }
+  },
 
-      return await response.json()
+  // 获取所有角色
+  getCharacters: async () => {
+    try {
+      const response = await api.get('/characters')
+      return response.data
     } catch (error) {
       console.error('获取角色列表失败:', error)
       throw error
     }
-  }
+  },
 
-  /**
-   * 切换角色
-   */
-  async switchCharacter(userId, characterId) {
+  // 获取指定用户和角色的对话历史
+  getConversationHistory: async (userId, characterId) => {
     try {
-      const response = await fetch(`${BASE_URL}/characters/${characterId}/switch?userId=${userId}`, {
-        method: 'POST'
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      return await response.json()
-    } catch (error) {
-      console.error('切换角色失败:', error)
-      throw error
-    }
-  }
-
-  /**
-   * 获取角色问候语
-   */
-  async getCharacterGreeting(characterId) {
-    try {
-      const response = await fetch(`${BASE_URL}/characters/${characterId}/greeting`)
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      return await response.json()
-    } catch (error) {
-      console.error('获取问候语失败:', error)
-      throw error
-    }
-  }
-
-  /**
-   * 获取对话历史
-   */
-  async getConversationHistory(userId, characterId, page = 0, size = 20) {
-    try {
-      const params = new URLSearchParams({
-        userId,
-        characterId,
-        page: page.toString(),
-        size: size.toString()
-      })
-
-      const response = await fetch(`${BASE_URL}/conversations?${params}`)
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      return await response.json()
+      const response = await api.get(`/conversations/${userId}/${characterId}`)
+      return response.data
     } catch (error) {
       console.error('获取对话历史失败:', error)
       throw error
     }
-  }
+  },
 
-  /**
-   * 获取用户统计信息
-   */
-  async getUserStats(userId) {
+  // 获取所有用户
+  getAllUsers: async () => {
     try {
-      const response = await fetch(`${BASE_URL}/users/${userId}/stats`)
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      return await response.json()
+      const response = await api.get('/users')
+      return response.data
     } catch (error) {
-      console.error('获取用户统计失败:', error)
+      console.error('获取用户列表失败:', error)
       throw error
     }
-  }
+  },
 
-  /**
-   * 健康检查
-   */
-  async healthCheck() {
+  // 创建用户
+  createUser: async (userData) => {
     try {
-      const response = await fetch(`${BASE_URL}/health`)
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      return await response.json()
+      console.log('创建用户:', userData)
+      const response = await api.post('/users', userData)
+      return response.data
     } catch (error) {
-      console.error('健康检查失败:', error)
+      console.error('创建用户失败:', error)
       throw error
     }
-  }
+  },
 
-  /**
-   * 语音转文字
-   */
-  async speechToText(audioFile) {
+  // 获取用户信息
+  getUserById: async (userId) => {
     try {
-      const formData = new FormData()
-      formData.append('audio_file', audioFile)
-
-      // 直接调用AI Agent的ASR接口
-      const aiAgentUrl = import.meta.env.VITE_AI_AGENT_BASE_URL || 'http://localhost:8001'
-      const response = await fetch(`${aiAgentUrl}/asr`, {
-        method: 'POST',
-        body: formData
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      return await response.json()
+      const response = await api.get(`/users/${userId}`)
+      return response.data
     } catch (error) {
-      console.error('语音识别失败:', error)
-      throw error
-    }
-  }
-
-  /**
-   * 文字转语音
-   */
-  async textToSpeech(text, voice = 'Cherry', speed = 1.0) {
-    try {
-      const params = new URLSearchParams({
-        text,
-        voice,
-        speed: speed.toString()
-      })
-
-      // 直接调用AI Agent的TTS接口
-      const aiAgentUrl = import.meta.env.VITE_AI_AGENT_BASE_URL || 'http://localhost:8001'
-      const response = await fetch(`${aiAgentUrl}/tts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: params
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      return await response.json()
-    } catch (error) {
-      console.error('语音合成失败:', error)
+      console.error('获取用户信息失败:', error)
       throw error
     }
   }
 }
 
-// 创建单例实例
-export const chatService = new ChatService()
+export default chatService
