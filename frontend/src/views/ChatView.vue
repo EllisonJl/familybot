@@ -44,7 +44,7 @@
       <!-- 加载中指示器 -->
       <div v-if="chatStore.isLoading" class="loading-message">
         <el-avatar :size="40" :src="chatStore.selectedCharacter?.avatarUrl">
-          <el-icon><Robot /></el-icon>
+          <el-icon><Avatar /></el-icon>
         </el-avatar>
         <div class="typing-indicator">
           <span>{{ chatStore.currentCharacterName }}正在思考</span>
@@ -112,7 +112,6 @@ import {
   Avatar, 
   UserFilled, 
   ChatLineRound, 
-  Robot, 
   Microphone, 
   VideoPause, 
   Promotion 

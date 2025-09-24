@@ -18,7 +18,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*") // 生产环境需要限制
+@CrossOrigin(origins = {"http://localhost:8080", "http://localhost:5173"}) // 允许的源
 public class FamilyBotController {
     
     private final FamilyBotService familyBotService;
@@ -83,9 +83,9 @@ public class FamilyBotController {
         @RequestParam String userId
     ) {
         try {
-            boolean success = familyBotService.switchCharacter(userId, characterId);
+            String result = familyBotService.switchCharacter(userId, characterId);
             
-            if (success) {
+            if ("角色切换成功！".equals(result)) {
                 return ResponseEntity.ok(Map.of(
                     "success", true,
                     "message", "角色切换成功",
@@ -94,7 +94,7 @@ public class FamilyBotController {
             } else {
                 return ResponseEntity.badRequest().body(Map.of(
                     "success", false,
-                    "message", "角色切换失败，角色可能不可用"
+                    "message", result
                 ));
             }
         } catch (Exception e) {
@@ -109,14 +109,14 @@ public class FamilyBotController {
      * 获取对话历史
      */
     @GetMapping("/conversations")
-    public ResponseEntity<Page<Conversation>> getConversationHistory(
+    public ResponseEntity<List<Conversation>> getConversationHistory(
         @RequestParam String userId,
         @RequestParam String characterId,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size
     ) {
         try {
-            Page<Conversation> conversations = familyBotService.getConversationHistory(
+            List<Conversation> conversations = familyBotService.getConversationHistory(
                 userId, characterId, page, size
             );
             return ResponseEntity.ok(conversations);

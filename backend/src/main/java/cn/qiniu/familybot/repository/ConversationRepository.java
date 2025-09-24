@@ -39,6 +39,11 @@ public interface ConversationRepository extends JpaRepository<Conversation, Long
     Page<Conversation> findByCharacterOrderByCreatedAtDesc(Character character, Pageable pageable);
     
     /**
+     * 根据用户和角色查找对话记录（按创建时间升序）
+     */
+    List<Conversation> findByUserAndCharacterOrderByCreatedAtAsc(User user, Character character);
+    
+    /**
      * 根据会话ID查找对话记录
      */
     List<Conversation> findBySessionIdOrderByCreatedAtAsc(String sessionId);

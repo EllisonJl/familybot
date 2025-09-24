@@ -22,7 +22,7 @@
         :src="message.avatar" 
         class="message-avatar"
       >
-        <el-icon><Robot /></el-icon>
+        <el-icon><Avatar /></el-icon>
       </el-avatar>
       <div class="message-content">
         <div class="character-name">{{ message.characterName }}</div>
@@ -70,7 +70,7 @@
 
 <script setup>
 import { ref, computed, onUnmounted } from 'vue'
-import { User, Robot, VideoPlay, VideoPause } from '@element-plus/icons-vue'
+import { User, Avatar, VideoPlay, VideoPause } from '@element-plus/icons-vue'
 import moment from 'moment'
 
 // Props

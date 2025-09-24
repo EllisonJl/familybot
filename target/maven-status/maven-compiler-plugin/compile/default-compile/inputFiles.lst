@@ -1,6 +1,7 @@
 /Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/FamilyBotApplication.java
 /Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/config/AppConfig.java
 /Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/config/CorsConfig.java
+/Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/config/WebConfig.java
 /Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/controller/FamilyBotController.java
 /Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/dto/CharacterDTO.java
 /Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/dto/ChatRequest.java
@@ -12,5 +13,6 @@
 /Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/repository/CharacterRepository.java
 /Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/repository/ConversationRepository.java
 /Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/repository/UserRepository.java
+/Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/service/AIAgentService.java
 /Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/service/DataInitService.java
 /Users/jllulu/Desktop/familybot/backend/src/main/java/cn/qiniu/familybot/service/FamilyBotService.java

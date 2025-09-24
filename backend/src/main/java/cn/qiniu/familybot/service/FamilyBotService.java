@@ -63,9 +63,9 @@ public class FamilyBotService {
     public CharacterDTO createCharacter(CharacterDTO characterDTO) {
         Character character = new Character();
         character.setName(characterDTO.getName());
-        character.setFamilyRole(characterDTO.getRole());
+        character.setFamilyRole(characterDTO.getFamilyRole());
         character.setPersonality(characterDTO.getPersonality());
-        character.setVoiceConfig(characterDTO.getVoiceId());
+        character.setVoiceConfig(characterDTO.getVoiceConfig().toString());
         character.setAvatarUrl(characterDTO.getAvatarUrl());
         Character savedCharacter = characterRepository.save(character);
         return convertToCharacterDTO(savedCharacter);
@@ -85,8 +85,8 @@ public class FamilyBotService {
     private final AIAgentService aiAgentService;
 
     public ChatResponse processChat(ChatRequest chatRequest) {
-        Optional<User> userOptional = userRepository.findById(chatRequest.getUserId());
-        Optional<Character> characterOptional = characterRepository.findById(chatRequest.getCharacterId());
+        Optional<User> userOptional = userRepository.findByUserId(chatRequest.getUserId());
+        Optional<Character> characterOptional = characterRepository.findByCharacterId(chatRequest.getCharacterId());
 
         if (userOptional.isEmpty() || characterOptional.isEmpty()) {
             throw new IllegalArgumentException("User or Character not found.");
@@ -143,7 +143,7 @@ public class FamilyBotService {
                 conversation.setUser(user);
                 conversation.setCharacter(character);
                 conversation.setUserMessage(chatRequest.getMessage() != null ? chatRequest.getMessage() : "[Audio Input]");
-                conversation.setAiResponse(response.getAiResponseText());
+                conversation.setAssistantResponse(response.getAiResponseText());
                 conversation = conversationRepository.save(conversation);
 
                 response.setConversationId(conversation.getId());
@@ -178,27 +178,108 @@ public class FamilyBotService {
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
         Character character = characterRepository.findById(characterId)
                 .orElseThrow(() -> new IllegalArgumentException("Character not found"));
-        return conversationRepository.findByUserAndCharacterOrderByTimestampAsc(user, character);
+        return conversationRepository.findByUserAndCharacterOrderByCreatedAtAsc(user, character);
     }
 
     // --- Helper methods for DTO conversion ---
     private UserDTO convertToUserDTO(User user) {
         UserDTO dto = new UserDTO();
-        dto.setId(user.getId());
+        dto.setUserId(user.getUserId());
         dto.setUsername(user.getUsername());
         dto.setNickname(user.getNickname());
-        dto.setAvatarUrl(user.getAvatarUrl());
+        dto.setAge(user.getAge());
+        dto.setGender(user.getGender());
+        dto.setPhone(user.getPhone());
+        dto.setAddress(user.getAddress());
+        dto.setHealthStatus(user.getHealthStatus());
+        dto.setInterests(user.getInterests());
+        dto.setDefaultCharacter(user.getDefaultCharacter());
+        dto.setStatus(user.getStatus().toString());
+        dto.setLastActiveTime(user.getLastActiveTime());
+        dto.setCreatedAt(user.getCreatedAt());
         return dto;
     }
 
     private CharacterDTO convertToCharacterDTO(Character character) {
         CharacterDTO dto = new CharacterDTO();
-        dto.setId(character.getId());
+        dto.setCharacterId(character.getCharacterId());
         dto.setName(character.getName());
-        dto.setRole(character.getRole());
+        dto.setFamilyRole(character.getFamilyRole());
         dto.setPersonality(character.getPersonality());
-        dto.setVoiceId(character.getVoiceId());
+        dto.setVoiceConfig(java.util.Map.of("config", character.getVoiceConfig()));
         dto.setAvatarUrl(character.getAvatarUrl());
+        dto.setGreeting(character.getGreeting());
+        dto.setBackgroundUrl(character.getBackgroundUrl());
+        dto.setIsDefault(character.getIsDefault());
+        dto.setStatus(character.getStatus().toString());
+        dto.setSortOrder(character.getSortOrder());
+        dto.setCreatedAt(character.getCreatedAt());
         return dto;
+    }
+    
+    // --- Additional Methods ---
+    
+    /**
+     * 获取角色问候语
+     */
+    public String getCharacterGreeting(String characterId) {
+        Optional<Character> character = characterRepository.findByCharacterId(characterId);
+        return character.map(Character::getGreeting)
+                .orElse("你好！我是你的AI家庭成员，很高兴见到你！");
+    }
+    
+    /**
+     * 切换角色
+     */
+    public String switchCharacter(String userId, String newCharacterId) {
+        try {
+            Optional<User> userOpt = userRepository.findByUserId(userId);
+            if (userOpt.isPresent()) {
+                User user = userOpt.get();
+                user.setDefaultCharacter(newCharacterId);
+                userRepository.save(user);
+                return "角色切换成功！";
+            }
+            return "用户不存在";
+        } catch (Exception e) {
+            return "角色切换失败：" + e.getMessage();
+        }
+    }
+    
+    /**
+     * 获取用户统计信息
+     */
+    public Map<String, Object> getUserStats(String userId) {
+        Map<String, Object> stats = new HashMap<>();
+        try {
+            Optional<User> userOpt = userRepository.findByUserId(userId);
+            if (userOpt.isPresent()) {
+                User user = userOpt.get();
+                stats.put("totalConversations", conversationRepository.countByUser(user));
+                stats.put("joinDate", user.getCreatedAt());
+                stats.put("lastActive", user.getLastActiveTime());
+                stats.put("defaultCharacter", user.getDefaultCharacter());
+            }
+        } catch (Exception e) {
+            stats.put("error", e.getMessage());
+        }
+        return stats;
+    }
+    
+    /**
+     * 获取对话历史（重载方法，支持分页）
+     */
+    public List<Conversation> getConversationHistory(String userId, String characterId, int page, int size) {
+        try {
+            Optional<User> userOpt = userRepository.findByUserId(userId);
+            Optional<Character> characterOpt = characterRepository.findByCharacterId(characterId);
+            
+            if (userOpt.isPresent() && characterOpt.isPresent()) {
+                return conversationRepository.findByUserAndCharacterOrderByCreatedAtAsc(userOpt.get(), characterOpt.get());
+            }
+            return new ArrayList<>();
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
     }
 }

@@ -76,4 +76,14 @@ public class ChatResponse {
      * 错误信息（如果有）
      */
     private String error;
+    
+    // AI 相关的额外字段
+    private String aiResponseText;  // AI回复文本
+    private String aiAudioUrl;      // AI音频URL
+    private String audioBase64;     // 音频Base64数据
+    private boolean ragEnhanced;    // 是否使用RAG增强
+    private boolean cotEnhanced;    // 是否使用CoT增强
+    private int cotStepsCount;      // CoT步骤数量
+    private String cotAnalysis;     // CoT分析结果
+    private Map<String, Object> routerInfo;  // 路由信息
 }

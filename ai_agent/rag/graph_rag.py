@@ -13,7 +13,7 @@ import numpy as np
 from openai import OpenAI
 
 from config import Config
-# from models.state import GraphRAGResult
+from models.state import GraphRAGResult
 
 
 @dataclass

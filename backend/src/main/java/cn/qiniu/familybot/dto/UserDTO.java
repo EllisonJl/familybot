@@ -91,4 +91,9 @@ public class UserDTO {
      * 统计信息
      */
     private Map<String, Object> stats;
+    
+    /**
+     * 用户头像URL
+     */
+    private String avatarUrl;
 }

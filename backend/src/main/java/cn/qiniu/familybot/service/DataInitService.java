@@ -35,6 +35,7 @@ public class DataInitService implements CommandLineRunner {
         if (characterRepository.count() == 0) {
             // 喜羊羊 - 儿子
             Character xiyang = new Character();
+            xiyang.setCharacterId("xiyang");
             xiyang.setName("喜羊羊");
             xiyang.setFamilyRole("儿子");
             xiyang.setPersonality("聪明、勇敢、孝顺、责任心强，总是关心家人的安全和健康");
@@ -44,6 +45,7 @@ public class DataInitService implements CommandLineRunner {
 
             // 美羊羊 - 女儿
             Character meiyang = new Character();
+            meiyang.setCharacterId("meiyang");
             meiyang.setName("美羊羊");
             meiyang.setFamilyRole("女儿");
             meiyang.setPersonality("温柔、细心、贴心、善解人意，是父母的贴心小棉袄");
@@ -53,6 +55,7 @@ public class DataInitService implements CommandLineRunner {
 
             // 懒羊羊 - 孙子
             Character lanyang = new Character();
+            lanyang.setCharacterId("lanyang");
             lanyang.setName("懒羊羊");
             lanyang.setFamilyRole("孙子");
             lanyang.setPersonality("天真烂漫、活泼可爱、爱撒娇、充满童趣，是爷爷奶奶的开心果");
@@ -70,6 +73,7 @@ public class DataInitService implements CommandLineRunner {
     private void initTestUser() {
         if (userRepository.count() == 0) {
             User testUser = new User();
+            testUser.setUserId("test_user_001");
             testUser.setUsername("爷爷奶奶");
             testUser.setNickname("测试用户");
             testUser.setConfig("test_hash");

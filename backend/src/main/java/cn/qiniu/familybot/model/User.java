@@ -86,6 +86,24 @@ public class User {
     private String preferences;
     
     /**
+     * 用户配置信息（JSON格式）
+     */
+    @Column(name = "config", columnDefinition = "TEXT")
+    private String config;
+    
+    /**
+     * 用户头像URL
+     */
+    @Column(name = "avatar_url")
+    private String avatarUrl;
+    
+    /**
+     * 密码哈希（如果需要认证）
+     */
+    @Column(name = "password_hash")
+    private String passwordHash;
+    
+    /**
      * 默认交互角色ID
      */
     @Column(name = "default_character")

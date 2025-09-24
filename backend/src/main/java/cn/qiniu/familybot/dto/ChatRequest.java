@@ -43,4 +43,9 @@ public class ChatRequest {
      * 对话类型 (TEXT/VOICE)
      */
     private String conversationType = "TEXT";
+    
+    /**
+     * 音频数据（Base64编码，语音输入时使用）
+     */
+    private String audioBase64;
 }
