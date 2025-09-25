@@ -26,6 +26,7 @@ check_port 8081 "后端"
 check_port 8001 "AI Agent"
 
 echo "🔧 启动后端服务 (Spring Boot)..."
+cd ..
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=integrated > logs/backend.log 2>&1 &
 BACKEND_PID=$!
 echo "   后端 PID: $BACKEND_PID"
@@ -36,17 +37,17 @@ source venv/bin/activate
 python main.py > ../logs/ai_agent.log 2>&1 &
 AI_AGENT_PID=$!
 echo "   AI Agent PID: $AI_AGENT_PID"
-cd ..
+cd ../scripts
 
 echo "⏳ 等待后端服务启动 (15秒)..."
 sleep 15
 
 echo "🌐 启动前端开发服务器 (Vue.js)..."
-cd frontend
+cd ../frontend
 npm run dev > ../logs/frontend.log 2>&1 &
 FRONTEND_PID=$!
 echo "   前端 PID: $FRONTEND_PID"
-cd ..
+cd ../scripts
 
 # 保存进程ID到文件
 echo "$BACKEND_PID" > .backend_pid
