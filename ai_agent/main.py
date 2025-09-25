@@ -329,10 +329,10 @@ def start_server():
     print(f"📚 API文档: http://localhost:{Config.AI_AGENT_PORT}/docs")
     
     uvicorn.run(
-        "ai_agent.main:app",
+        app,
         host="0.0.0.0",
         port=Config.AI_AGENT_PORT,
-        reload=Config.DEBUG
+        reload=False  # 禁用reload避免模块路径问题
     )
 
 

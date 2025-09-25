@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import ChatView from '../views/ChatView.vue'
+import TestView from '../views/TestView.vue'
 
 const routes = [
   {
@@ -9,6 +10,14 @@ const routes = [
     component: HomeView,
     meta: {
       title: 'FamilyBot - 温暖的AI陪伴'
+    }
+  },
+  {
+    path: '/test',
+    name: 'Test',
+    component: TestView,
+    meta: {
+      title: 'FamilyBot - 测试页面'
     }
   },
   {

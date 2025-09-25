@@ -1,5 +1,13 @@
 <template>
-  <div class="chat-container">
+  <div class="chat-layout">
+    <!-- 历史会话侧边栏 -->
+    <ConversationSidebar 
+      :collapsed="sidebarCollapsed"
+      @toggle-collapse="sidebarCollapsed = !sidebarCollapsed"
+    />
+    
+    <!-- 主聊天区域 -->
+    <div class="chat-container">
     <!-- 顶部头部 -->
     <div class="chat-header">
       <div class="header-left">
@@ -33,6 +41,11 @@
         <el-icon size="60" class="welcome-icon"><ChatLineRound /></el-icon>
         <h3>开始和{{ chatStore.currentCharacterName }}聊天吧！</h3>
         <p>{{ chatStore.selectedCharacter?.personality || '请先选择当前角色开始对话' }}</p>
+        <div v-if="voiceEnabled" class="voice-hint">
+          <el-icon class="voice-hint-icon"><Microphone /></el-icon>
+          <span v-if="isListening">正在听您说话，请直接开口...</span>
+          <span v-else>语音识别已启用，点击麦克风可以关闭</span>
+        </div>
       </div>
       
       <ChatMessage
@@ -72,15 +85,27 @@
         />
         
         <div class="input-actions">
-          <!-- 语音输入按钮 -->
-          <el-button
-            :type="chatStore.isRecording ? 'danger' : 'info'"
-            :icon="chatStore.isRecording ? 'VideoPause' : 'Microphone'"
-            circle
-            @click="toggleVoiceRecord"
-            :disabled="chatStore.isLoading"
-            class="voice-btn"
-          />
+          <!-- 语音控制按钮 -->
+          <el-tooltip :content="voiceEnabled ? '点击关闭语音识别' : '点击启动语音识别'" placement="top">
+            <div 
+              class="voice-toggle" 
+              :class="{ 'enabled': voiceEnabled, 'listening': isListening }"
+              @click="toggleVoiceRecognition"
+            >
+              <el-icon><Microphone /></el-icon>
+            </div>
+          </el-tooltip>
+          
+          <!-- TTS控制按钮 -->
+          <el-tooltip :content="ttsEnabled ? '点击关闭语音播放' : '点击启用语音播放'" placement="top">
+            <div 
+              class="tts-toggle" 
+              :class="{ 'enabled': ttsEnabled, 'speaking': isSpeaking }"
+              @click="toggleTTS"
+            >
+              <el-icon><VideoPlay /></el-icon>
+            </div>
+          </el-tooltip>
           
           <!-- 发送按钮 -->
           <el-button
@@ -102,11 +127,12 @@
       :current-character="chatStore.selectedCharacter"
       @select="handleCharacterSelect"
     />
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, nextTick, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { 
   Avatar, 
@@ -114,12 +140,14 @@ import {
   ChatLineRound, 
   Microphone, 
   VideoPause, 
-  Promotion 
+  Promotion,
+  VideoPlay
 } from '@element-plus/icons-vue'
 
 import { useChatStore } from '@/stores/chat'
 import ChatMessage from '@/components/ChatMessage.vue'
 import CharacterSelector from '@/components/CharacterSelector.vue'
+import ConversationSidebar from '@/components/ConversationSidebar.vue'
 
 // 状态管理
 const chatStore = useChatStore()
@@ -128,24 +156,43 @@ const chatStore = useChatStore()
 const currentMessage = ref('')
 const showCharacterSelector = ref(false)
 const messageListRef = ref(null)
+const isListening = ref(false)
+const recognition = ref(null)
+const voiceEnabled = ref(false)
+const ttsEnabled = ref(true)
+const isSpeaking = ref(false)
+const sidebarCollapsed = ref(false)
 
 // 方法
-const handleSend = async () => {
-  if (!currentMessage.value.trim()) return
+const handleSend = async (inputText = null) => {
+  const message = inputText || currentMessage.value.trim()
+  if (!message) return
   if (!chatStore.selectedCharacter) {
     ElMessage.warning('请先选择当前角色')
     showCharacterSelector.value = true
     return
   }
 
-  const message = currentMessage.value.trim()
-  currentMessage.value = ''
+  if (!inputText) {
+    currentMessage.value = ''
+  }
 
   try {
-    await chatStore.sendMessage(message)
+    const aiMessage = await chatStore.sendMessage(message)
     scrollToBottom()
+    
+    // 如果启用了TTS，播放AI回复
+    if (aiMessage && aiMessage.content && ttsEnabled.value) {
+      // 稍微延迟播放，确保消息已经显示
+      setTimeout(() => {
+        speakText(aiMessage.content)
+      }, 500)
+    }
   } catch (error) {
-    ElMessage.error('发送消息失败，请重试')
+    console.error('发送消息失败:', error)
+    // 由于chat.js中已有fallback机制，这里的错误通常不会出现
+    // 如果出现，说明是其他问题
+    ElMessage.warning('正在使用离线模式，AI回复可能较为简单')
   }
 }
 
@@ -159,26 +206,184 @@ const handleCharacterSelect = async (character) => {
   }
 }
 
-const toggleVoiceRecord = () => {
-  if (chatStore.isRecording) {
-    stopVoiceRecord()
-  } else {
-    startVoiceRecord()
+// 初始化语音识别
+const initSpeechRecognition = async () => {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    ElMessage.warning('您的浏览器不支持语音识别功能，请使用Chrome或Safari浏览器')
+    return
+  }
+
+  // 先请求麦克风权限
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true })
+    console.log('麦克风权限已获取')
+  } catch (error) {
+    console.error('无法获取麦克风权限:', error)
+    ElMessage.error('请允许使用麦克风，然后刷新页面重试')
+    return
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+  recognition.value = new SpeechRecognition()
+  
+  recognition.value.continuous = true
+  recognition.value.interimResults = true  // 恢复临时结果，提高识别率
+  recognition.value.lang = 'zh-CN'
+  recognition.value.maxAlternatives = 3  // 增加候选结果
+  recognition.value.grammars = null  // 不限制语法
+  
+  recognition.value.onstart = () => {
+    isListening.value = true
+    console.log('语音识别已启动')
+  }
+  
+  recognition.value.onresult = (event) => {
+    let finalTranscript = ''
+    let interimTranscript = ''
+    
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript.trim()
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript
+      } else {
+        interimTranscript += transcript
+      }
+    }
+    
+    // 显示临时识别结果
+    if (interimTranscript) {
+      currentMessage.value = interimTranscript
+      console.log('临时识别:', interimTranscript)
+    }
+    
+    // 处理最终识别结果
+    if (finalTranscript.trim()) {
+      console.log('最终识别完成:', finalTranscript.trim())
+      // 显示识别成功提示
+      ElMessage.success(`识别完成: "${finalTranscript.trim()}"`)
+      // 清空输入框
+      currentMessage.value = ''
+      // 直接发送语音识别结果
+      handleSend(finalTranscript.trim())
+    }
+  }
+  
+  recognition.value.onerror = (event) => {
+    console.error('语音识别错误:', event.error)
+    isListening.value = false
+    
+    switch (event.error) {
+      case 'not-allowed':
+        ElMessage.error('麦克风权限被拒绝，请在浏览器设置中允许使用麦克风')
+        break
+      case 'no-speech':
+        console.log('没有检测到语音，继续监听...')
+        // 没有语音时不显示错误，自动重启
+        setTimeout(() => startSpeechRecognition(), 1000)
+        break
+      case 'audio-capture':
+        ElMessage.error('无法捕获音频，请检查麦克风连接')
+        break
+      case 'network':
+        ElMessage.warning('网络错误，语音识别可能不稳定')
+        setTimeout(() => startSpeechRecognition(), 2000)
+        break
+      case 'aborted':
+        console.log('语音识别被中止')
+        break
+      default:
+        console.log('语音识别错误:', event.error, '自动重试中...')
+        setTimeout(() => startSpeechRecognition(), 1000)
+        break
+    }
+  }
+  
+  recognition.value.onend = () => {
+    isListening.value = false
+    // 只有在语音功能启用时才自动重启
+    if (voiceEnabled.value && chatStore.selectedCharacter) {
+      setTimeout(() => startSpeechRecognition(), 1000)
+    }
   }
 }
 
-const startVoiceRecord = () => {
-  chatStore.setRecording(true)
-  ElMessage.info('语音录制功能正在开发中...')
-  // TODO: 实现语音录制
-  setTimeout(() => {
-    chatStore.setRecording(false)
-  }, 2000)
+const startSpeechRecognition = () => {
+  if (recognition.value && !isListening.value && voiceEnabled.value) {
+    try {
+      recognition.value.start()
+    } catch (error) {
+      console.log('语音识别已在运行')
+    }
+  }
 }
 
-const stopVoiceRecord = () => {
-  chatStore.setRecording(false)
-  // TODO: 处理录制结果
+const toggleVoiceRecognition = () => {
+  voiceEnabled.value = !voiceEnabled.value
+  if (voiceEnabled.value) {
+    startSpeechRecognition()
+  } else {
+    stopSpeechRecognition()
+  }
+}
+
+const stopSpeechRecognition = () => {
+  if (recognition.value && isListening.value) {
+    recognition.value.stop()
+    isListening.value = false
+  }
+}
+
+// TTS 文本转语音功能
+const speakText = (text) => {
+  if (!ttsEnabled.value || !text.trim()) return
+  
+  // 停止当前播放
+  speechSynthesis.cancel()
+  
+  // 创建语音合成实例
+  const utterance = new SpeechSynthesisUtterance(text)
+  
+  // 设置语音参数
+  utterance.lang = 'zh-CN'
+  utterance.rate = 0.9  // 语速稍慢一些
+  utterance.pitch = 1.1  // 音调稍高一些，更亲切
+  utterance.volume = 0.8
+  
+  // 尝试使用中文语音
+  const voices = speechSynthesis.getVoices()
+  const chineseVoice = voices.find(voice => 
+    voice.lang.includes('zh') || voice.name.includes('Chinese')
+  )
+  if (chineseVoice) {
+    utterance.voice = chineseVoice
+  }
+  
+  // 事件监听
+  utterance.onstart = () => {
+    isSpeaking.value = true
+    console.log('开始语音播放:', text)
+  }
+  
+  utterance.onend = () => {
+    isSpeaking.value = false
+    console.log('语音播放完成')
+  }
+  
+  utterance.onerror = (event) => {
+    isSpeaking.value = false
+    console.error('语音播放错误:', event.error)
+  }
+  
+  // 开始播放
+  speechSynthesis.speak(utterance)
+}
+
+const toggleTTS = () => {
+  ttsEnabled.value = !ttsEnabled.value
+  if (!ttsEnabled.value) {
+    speechSynthesis.cancel() // 关闭TTS时停止当前播放
+    isSpeaking.value = false
+  }
 }
 
 const scrollToBottom = () => {
@@ -193,19 +398,49 @@ const scrollToBottom = () => {
 onMounted(async () => {
   try {
     await chatStore.initialize()
-    if (chatStore.characters.length === 0) {
-      ElMessage.warning('暂无可用角色，请联系管理员')
-    } else if (!chatStore.selectedCharacter) {
-      showCharacterSelector.value = true
-    }
+    
+    // 加载会话历史
+    chatStore.loadConversationsFromLocal()
+    
+    // 等待一小段时间确保fallback角色加载完成
+    setTimeout(async () => {
+      if (chatStore.characters.length === 0) {
+        ElMessage.warning('正在初始化角色数据，请稍候...')
+      } else if (!chatStore.selectedCharacter && chatStore.characters.length > 0) {
+        showCharacterSelector.value = true
+      }
+      
+      // 初始化语音识别
+      await initSpeechRecognition()
+      
+      // 不自动启动语音识别，让用户手动控制
+    }, 500)
+    
   } catch (error) {
-    ElMessage.error('初始化失败，请刷新页面重试')
+    console.error('初始化错误:', error)
+    ElMessage.error('初始化失败，正在使用默认配置')
   }
+})
+
+// 监听角色变化
+watch(() => chatStore.selectedCharacter, (newCharacter) => {
+  if (!newCharacter) {
+    stopSpeechRecognition()
+    voiceEnabled.value = false
+  }
+  // 不自动启动语音识别，让用户手动控制
 })
 </script>
 
 <style scoped>
+.chat-layout {
+  display: flex;
+  height: 100vh;
+  background: white;
+}
+
 .chat-container {
+  flex: 1;
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -281,6 +516,34 @@ onMounted(async () => {
   margin: 0;
   font-size: 14px;
   line-height: 1.6;
+}
+
+.voice-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #4CAF50, #45a049);
+  color: white;
+  border-radius: 20px;
+  font-size: 14px;
+  animation: voicePulse 2s infinite;
+}
+
+.voice-hint-icon {
+  animation: bounce 1s infinite;
+}
+
+@keyframes voicePulse {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.02); }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
 }
 
 .loading-message {
@@ -365,7 +628,72 @@ onMounted(async () => {
   gap: 8px;
 }
 
-.voice-btn, .send-btn {
+.voice-toggle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f0;
+  border: 2px solid #e0e0e0;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.voice-toggle:hover {
+  background: #e8e8e8;
+  transform: scale(1.1);
+}
+
+.voice-toggle.enabled {
+  background: #4CAF50;
+  border-color: #45a049;
+  color: white;
+}
+
+.voice-toggle.listening {
+  animation: pulse 1.5s infinite;
+}
+
+.tts-toggle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f0;
+  border: 2px solid #e0e0e0;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.tts-toggle:hover {
+  background: #e8e8e8;
+  transform: scale(1.1);
+}
+
+.tts-toggle.enabled {
+  background: #2196F3;
+  border-color: #1976D2;
+  color: white;
+}
+
+.tts-toggle.speaking {
+  animation: pulse 1.5s infinite;
+  background: #FF9800;
+  border-color: #F57C00;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+.send-btn {
   width: 40px;
   height: 40px;
 }

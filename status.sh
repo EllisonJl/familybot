@@ -1,62 +1,91 @@
 #!/bin/bash
 
-echo "🔍 Checking FamilyBot services status..."
-echo "======================================="
+# FamilyBot 状态检查脚本
+# 使用方法: ./status.sh
 
-check_service() {
+echo "📊 FamilyBot 系统状态检查"
+echo "========================="
+echo ""
+
+# 检查端口状态
+check_port() {
     local port=$1
-    local service_name=$2
-    local endpoint=$3
+    local service=$2
+    local url=$3
     
-    # 检查端口是否在监听
-    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
-        echo "✅ $service_name is running on port $port"
-        
-        # 如果提供了endpoint，测试HTTP连接
-        if [ -n "$endpoint" ]; then
-            if curl -s --max-time 5 "$endpoint" >/dev/null 2>&1; then
-                echo "   🌐 HTTP endpoint responding: $endpoint"
+    if lsof -i :$port >/dev/null 2>&1; then
+        echo "✅ $service (端口 $port): 运行中"
+        if [ ! -z "$url" ]; then
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $url 2>/dev/null)
+            if [ "$HTTP_STATUS" = "200" ]; then
+                echo "   🌐 HTTP状态: 正常 ($HTTP_STATUS)"
             else
-                echo "   ⚠️  Port open but HTTP not responding: $endpoint"
+                echo "   ⚠️  HTTP状态: 异常 ($HTTP_STATUS)"
             fi
         fi
     else
-        echo "❌ $service_name is NOT running on port $port"
+        echo "❌ $service (端口 $port): 未运行"
     fi
 }
 
-# 检查各个服务
-check_service 8001 "AI Agent (FastAPI)" "http://localhost:8001/"
-check_service 8080 "Backend (Spring Boot)" "http://localhost:8080/api/v1/characters"
-check_service 5173 "Frontend (Vue/Vite)" "http://localhost:5173/"
+# 检查所有服务
+check_port 8081 "后端服务" "http://localhost:8081/api/v1/characters"
+check_port 8001 "AI Agent" "http://localhost:8001/health"
+check_port 8080 "前端服务" "http://localhost:8080"
 
 echo ""
-echo "📊 Process details:"
-echo "==================="
+echo "🔍 进程详情："
+echo "-------------"
 
-# 显示相关进程
-echo "🤖 AI Agent processes:"
-ps aux | grep -E "(uvicorn|main:app)" | grep -v grep || echo "   No AI Agent processes found"
+# 检查Spring Boot进程
+SPRING_PROCESS=$(ps aux | grep "spring-boot:run" | grep -v grep)
+if [ ! -z "$SPRING_PROCESS" ]; then
+    echo "🔧 后端进程:"
+    echo "$SPRING_PROCESS" | awk '{print "   PID: " $2 ", 内存: " $4 "%, CPU: " $3 "%"}'
+else
+    echo "❌ 未找到后端进程"
+fi
+
+# 检查Python进程
+PYTHON_PROCESS=$(ps aux | grep "python main.py" | grep -v grep)
+if [ ! -z "$PYTHON_PROCESS" ]; then
+    echo "🤖 AI Agent进程:"
+    echo "$PYTHON_PROCESS" | awk '{print "   PID: " $2 ", 内存: " $4 "%, CPU: " $3 "%"}'
+else
+    echo "❌ 未找到AI Agent进程"
+fi
+
+# 检查Node.js进程
+NODE_PROCESS=$(ps aux | grep "vite\|npm run dev" | grep -v grep)
+if [ ! -z "$NODE_PROCESS" ]; then
+    echo "🌐 前端进程:"
+    echo "$NODE_PROCESS" | awk '{print "   PID: " $2 ", 内存: " $4 "%, CPU: " $3 "%"}'
+else
+    echo "❌ 未找到前端进程"
+fi
 
 echo ""
-echo "🏗️  Backend processes:"
-ps aux | grep -E "(spring-boot|mvnw)" | grep -v grep || echo "   No Backend processes found"
+echo "📁 日志文件："
+echo "-------------"
+if [ -d "logs" ]; then
+    ls -la logs/ 2>/dev/null | grep -E "\.(log)$" | awk '{print $9 ": " $5 " bytes, " $6 " " $7 " " $8}'
+else
+    echo "❌ 日志目录不存在"
+fi
 
 echo ""
-echo "🎨 Frontend processes:"
-ps aux | grep -E "(vite|npm.*dev)" | grep -v grep || echo "   No Frontend processes found"
+echo "🎯 快速操作："
+echo "-------------"
+echo "启动系统: ./start-all.sh"
+echo "停止系统: ./stop-all.sh"
+echo "查看后端日志: tail -f logs/backend.log"
+echo "查看AI日志: tail -f logs/ai_agent.log"
+echo "查看前端日志: tail -f logs/frontend.log"
 
 echo ""
-echo "🌐 Access URLs:"
-echo "==============="
-echo "Frontend:  http://localhost:5173"
-echo "Backend:   http://localhost:8080" 
-echo "AI Agent:  http://localhost:8001"
-echo "Backend API Test: http://localhost:8080/api/v1/characters"
-
-echo ""
-echo "📋 Quick commands:"
-echo "=================="
-echo "Start all:  ./start.sh"
-echo "Stop all:   ./stop.sh"
-echo "Check logs: tail -f logs/[ai_agent|backend|frontend].log"
+echo "🌍 访问地址："
+echo "-------------"
+echo "主页面: http://localhost:8080"
+echo "聊天页面: http://localhost:8080/chat"
+echo "后端API: http://localhost:8081/api/v1"
+echo "AI Agent API: http://localhost:8001"
