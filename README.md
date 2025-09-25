@@ -268,28 +268,3 @@ familybot/
 │       └── stores/
 └── logs/            # 运行日志
 ```
-
-### 开发工作流
-1. Fork 项目
-2. 创建功能分支
-3. 本地测试验证
-4. 提交Pull Request
-
-## 📄 许可证
-
-MIT License - 详见 [LICENSE](LICENSE) 文件
-
-## 🙏 致谢
-
-感谢以下开源项目的支持：
-- LangChain & LangGraph
-- Vue.js & Element Plus
-- Spring Boot
-- FastAPI
-
----
-
-<div align="center">
-  <p>💝 用技术传递温暖，让每一位老人都有家人陪伴 💝</p>
-  <p>📧 联系方式: [your-email@example.com]</p>
-</div>
