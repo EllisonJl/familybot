@@ -64,9 +64,13 @@ tests/temp_*
 tests/*.wav
 tests/*.m4a
 
-# 脚本日志文件
+# 脚本日志文件和PID文件
 scripts/*.log
 scripts/pid_*
+.ai_agent_pid
+.backend_pid
+.frontend_pid
+*.pid
 
 # Java 构建产物
 target/
