@@ -58,6 +58,16 @@ build/
 Thumbs.db
 *.tmp
 
+# 测试临时文件
+tests/test_*.tmp
+tests/temp_*
+tests/*.wav
+tests/*.m4a
+
+# 脚本日志文件
+scripts/*.log
+scripts/pid_*
+
 # Java 构建产物
 target/
 *.class
