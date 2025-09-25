@@ -1,11 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import HomeView from '../views/HomeView.vue'
 import ChatView from '../views/ChatView.vue'
 
 const routes = [
   {
     path: '/',
     name: 'Home',
-    redirect: '/chat'
+    component: HomeView,
+    meta: {
+      title: 'FamilyBot - 温暖的AI陪伴'
+    }
   },
   {
     path: '/chat',

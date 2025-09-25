@@ -12,7 +12,7 @@
         </el-avatar>
         <div class="character-info">
           <h2 class="character-name">{{ chatStore.currentCharacterName }}</h2>
-          <p class="character-role">{{ chatStore.selectedCharacter?.role || '选择一个家庭成员' }}</p>
+          <p class="character-role">当前角色</p>
         </div>
       </div>
       
@@ -32,7 +32,7 @@
       <div v-if="!chatStore.hasMessages" class="welcome-message">
         <el-icon size="60" class="welcome-icon"><ChatLineRound /></el-icon>
         <h3>开始和{{ chatStore.currentCharacterName }}聊天吧！</h3>
-        <p>{{ chatStore.selectedCharacter?.personality || '请先选择一个家庭成员开始对话' }}</p>
+        <p>{{ chatStore.selectedCharacter?.personality || '请先选择当前角色开始对话' }}</p>
       </div>
       
       <ChatMessage
@@ -133,7 +133,7 @@ const messageListRef = ref(null)
 const handleSend = async () => {
   if (!currentMessage.value.trim()) return
   if (!chatStore.selectedCharacter) {
-    ElMessage.warning('请先选择一个家庭成员')
+    ElMessage.warning('请先选择当前角色')
     showCharacterSelector.value = true
     return
   }

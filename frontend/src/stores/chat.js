@@ -14,7 +14,7 @@ export const useChatStore = defineStore('chat', () => {
   // 计算属性
   const hasMessages = computed(() => messages.value.length > 0)
   const currentCharacterName = computed(() => 
-    selectedCharacter.value ? selectedCharacter.value.name : '选择角色'
+    selectedCharacter.value ? selectedCharacter.value.name : '当前角色'
   )
   
   // 方法
