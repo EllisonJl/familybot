@@ -52,6 +52,7 @@ class ConversationState(BaseModel):
     # 路由相关
     router: Optional[Router] = Field(default=None, description="路由信息")
     selected_character: str = Field(default="xiyang", description="选中的角色ID")
+    role: str = Field(default="elderly", description="用户角色（elderly/adult/child）")
     
     # 意图和情绪
     intent: str = Field(default="general", description="用户意图")

@@ -24,6 +24,9 @@ class ChatRequest(BaseModel):
     user_id: str = "default"
     character_id: str = "xiyang"
     context: Optional[Dict[str, Any]] = None
+    use_agent: Optional[bool] = True
+    role: Optional[str] = "elderly"
+    thread_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -84,6 +87,16 @@ conversation_graph = ConversationGraph()
 
 
 # === 健康检查 ===
+@app.get("/")
+async def root():
+    """根路径接口"""
+    return {
+        "service": "FamilyBot AI Agent",
+        "status": "running",
+        "version": "1.0.0",
+        "timestamp": datetime.now().isoformat()
+    }
+
 @app.get("/health")
 async def health_check():
     """健康检查接口"""
@@ -141,24 +154,49 @@ async def get_character_greeting(character_id: str):
 async def text_chat(request: ChatRequest):
     """文本聊天接口"""
     try:
-        # 处理对话（异步）
-        result = await conversation_graph.process_conversation(
-            user_input=request.message,
-            user_id=request.user_id,
-            character_id=request.character_id
-        )
+        print(f"📝 收到聊天请求: {request.user_id} -> {request.character_id}: {request.message[:50]}...")
+        print(f"🎯 使用Agent: {request.use_agent}, 角色: {request.role}, 线程ID: {request.thread_id}")
+        
+        # 直接使用角色管理器生成回复（绕过LangGraph）
+        from agents.character_agent import CharacterManager
+        from datetime import datetime
+        
+        character_manager = CharacterManager()
+        agent = character_manager.get_agent(request.character_id)
+        
+        if not agent:
+            raise HTTPException(status_code=404, detail=f"角色 {request.character_id} 不存在")
+        
+        # 生成回复
+        response_data = agent.generate_response(request.message)
+        
+        print(f"✅ 生成回复: {response_data['character_name']} -> {response_data['response'][:50]}...")
         
         return ChatResponse(
-            character_id=result["character_id"],
-            character_name=result["character_name"],
-            response=result["response"],
-            emotion=result["emotion"],
-            timestamp=result["timestamp"],
-            voice_config=result.get("voice_config")
+            character_id=response_data["character_id"],
+            character_name=response_data["character_name"],
+            response=response_data["response"],
+            emotion=response_data["emotion"],
+            timestamp=response_data["timestamp"],
+            voice_config=response_data.get("voice_config")
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"聊天处理失败: {str(e)}")
+        print(f"❌ 聊天处理失败: {str(e)}")
+        # 返回fallback回复
+        try:
+            from config import CHARACTER_CONFIGS
+        except ImportError:
+            CHARACTER_CONFIGS = {}
+        
+        character_config = CHARACTER_CONFIGS.get(request.character_id, {})
+        return ChatResponse(
+            character_id=request.character_id,
+            character_name=character_config.get("name", "系统"),
+            response="抱歉，我现在有点问题，请稍后再试。",
+            emotion="error",
+            timestamp=datetime.now().isoformat()
+        )
 
 
 # === 语音聊天接口 ===

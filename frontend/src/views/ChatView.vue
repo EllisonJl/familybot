@@ -7,7 +7,7 @@
     />
     
     <!-- 主聊天区域 -->
-    <div class="chat-container">
+  <div class="chat-container">
     <!-- 顶部头部 -->
     <div class="chat-header">
       <div class="header-left">
@@ -78,7 +78,7 @@
           type="textarea"
           :autosize="{ minRows: 1, maxRows: 4 }"
           placeholder="输入消息..."
-          @keyup.enter.exact="handleSend"
+          @keyup.enter="handleEnterKey"
           @keyup.enter.shift.exact="() => {}"
           :disabled="chatStore.isLoading || !chatStore.selectedCharacter"
           class="message-input"
@@ -161,11 +161,20 @@ const recognition = ref(null)
 const voiceEnabled = ref(false)
 const ttsEnabled = ref(true)
 const isSpeaking = ref(false)
+const voiceRetryCount = ref(0)
+const maxRetries = 3
 const sidebarCollapsed = ref(false)
 
 // 方法
 const handleSend = async (inputText = null) => {
-  const message = inputText || currentMessage.value.trim()
+  // 确保inputText是字符串，如果是事件对象则忽略
+  let message
+  if (typeof inputText === 'string') {
+    message = inputText.trim()
+  } else {
+    message = currentMessage.value.trim()
+  }
+  
   if (!message) return
   if (!chatStore.selectedCharacter) {
     ElMessage.warning('请先选择当前角色')
@@ -173,7 +182,8 @@ const handleSend = async (inputText = null) => {
     return
   }
 
-  if (!inputText) {
+  // 只有在没有传入文本时才清空输入框
+  if (typeof inputText !== 'string') {
     currentMessage.value = ''
   }
 
@@ -190,9 +200,15 @@ const handleSend = async (inputText = null) => {
     }
   } catch (error) {
     console.error('发送消息失败:', error)
-    // 由于chat.js中已有fallback机制，这里的错误通常不会出现
-    // 如果出现，说明是其他问题
-    ElMessage.warning('正在使用离线模式，AI回复可能较为简单')
+    // 显示真实的错误信息
+    ElMessage.error(`消息发送失败: ${error.message || '网络连接错误'}`)
+  }
+}
+
+const handleEnterKey = (e) => {
+  if (!e.shiftKey) {
+    e.preventDefault()
+    handleSend()
   }
 }
 
@@ -208,128 +224,403 @@ const handleCharacterSelect = async (character) => {
 
 // 初始化语音识别
 const initSpeechRecognition = async () => {
-  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-    ElMessage.warning('您的浏览器不支持语音识别功能，请使用Chrome或Safari浏览器')
-    return
-  }
-
-  // 先请求麦克风权限
   try {
-    await navigator.mediaDevices.getUserMedia({ audio: true })
-    console.log('麦克风权限已获取')
-  } catch (error) {
-    console.error('无法获取麦克风权限:', error)
-    ElMessage.error('请允许使用麦克风，然后刷新页面重试')
+    console.log('开始初始化语音识别...')
+    
+    // 检查浏览器支持
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      console.error('❌ 浏览器不支持语音识别')
+      ElMessage.error('您的浏览器不支持语音识别，请使用Chrome、Edge或Safari')
+      return false
+    }
+    console.log('✅ 浏览器支持语音识别:', SpeechRecognition.name)
+    
+    // 检查是否已经初始化过
+    if (recognition.value) {
+      console.log('语音识别已经初始化，尝试重新启动...')
+      try {
+        recognition.value.stop()
+      } catch (e) {
+        console.log('停止现有语音识别:', e)
+      }
+      recognition.value = null
+    }
+    
+    // 检查麦克风权限
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('浏览器不支持麦克风访问')
+    }
+    
+    console.log('🔐 请求麦克风权限...')
+    let stream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      })
+      console.log('✅ 麦克风权限获取成功')
+    } catch (permissionError) {
+      console.error('❌ 麦克风权限被拒绝:', permissionError.name, permissionError.message)
+      if (permissionError.name === 'NotAllowedError') {
+        ElMessage.error('请允许使用麦克风，然后刷新页面重试')
+      } else if (permissionError.name === 'NotFoundError') {
+        ElMessage.error('未检测到麦克风设备，请检查设备连接')
+      } else {
+        ElMessage.error(`麦克风访问失败: ${permissionError.message}`)
+      }
+      return false
+    }
+    
+    const tracks = stream.getAudioTracks()
+    if (!tracks || tracks.length === 0) {
+      throw new Error('未检测到麦克风设备')
+    }
+    
+    console.log('麦克风权限已获取:', {
+      tracks: tracks.length,
+      label: tracks[0].label,
+      enabled: tracks[0].enabled
+    })
+    
+    // 保持音频流活跃
+    if (window.audioStream) {
+      window.audioStream.getTracks().forEach(track => track.stop())
+    }
+    window.audioStream = stream
+
+    // 创建语音识别实例
+    console.log('创建语音识别实例...')
+    recognition.value = new SpeechRecognition()
+    console.log('✅ 语音识别实例创建成功')
+    
+    // 配置语音识别
+    recognition.value.continuous = true
+    recognition.value.interimResults = true
+    recognition.value.lang = 'zh-CN'
+    recognition.value.maxAlternatives = 3
+    
+    console.log('语音识别配置完成:', {
+      continuous: recognition.value.continuous,
+      interimResults: recognition.value.interimResults,
+      lang: recognition.value.lang,
+      maxAlternatives: recognition.value.maxAlternatives
+    })
+    
+    // 设置音频上下文
+    console.log('设置音频上下文...')
+    let audioContext
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)()
+      console.log('音频上下文创建成功')
+    } catch (error) {
+      console.error('创建音频上下文失败:', error)
+      throw new Error('无法创建音频上下文')
+    }
+    
+    try {
+      const source = audioContext.createMediaStreamSource(stream)
+      console.log('音频源创建成功')
+      
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 1024  // 增加FFT大小以提高精度
+      analyser.smoothingTimeConstant = 0.8  // 平滑处理
+      analyser.minDecibels = -90
+      analyser.maxDecibels = -10
+      
+      source.connect(analyser)
+      console.log('音频分析器配置完成:', {
+        fftSize: analyser.fftSize,
+        frequencyBinCount: analyser.frequencyBinCount,
+        minDecibels: analyser.minDecibels,
+        maxDecibels: analyser.maxDecibels
+      })
+      
+      // 保存到全局以便后续使用
+      window.audioContext = audioContext
+      window.analyser = analyser
+    } catch (error) {
+      console.error('音频分析器配置失败:', error)
+      throw new Error('无法配置音频分析器')
+    }
+    
+    // 音量监测
+const checkVolume = () => {
+  if (!window.analyser) {
+    console.warn('音频分析器未初始化')
     return
   }
-
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-  recognition.value = new SpeechRecognition()
   
-  recognition.value.continuous = true
-  recognition.value.interimResults = true  // 恢复临时结果，提高识别率
-  recognition.value.lang = 'zh-CN'
-  recognition.value.maxAlternatives = 3  // 增加候选结果
-  recognition.value.grammars = null  // 不限制语法
-  
-  recognition.value.onstart = () => {
-    isListening.value = true
-    console.log('语音识别已启动')
-  }
-  
-  recognition.value.onresult = (event) => {
-    let finalTranscript = ''
-    let interimTranscript = ''
+  try {
+    const dataArray = new Uint8Array(window.analyser.frequencyBinCount)
+    window.analyser.getByteFrequencyData(dataArray)
+    const volume = dataArray.reduce((a, b) => a + b) / dataArray.length
     
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const transcript = event.results[i][0].transcript.trim()
-      if (event.results[i].isFinal) {
-        finalTranscript += transcript
-      } else {
-        interimTranscript += transcript
+    // 更新音量显示
+    if (volume > 0) {
+      console.log('检测到声音，音量:', volume.toFixed(2))
+      // 添加可视化反馈
+      const voiceToggle = document.querySelector('.voice-toggle')
+      if (voiceToggle) {
+        voiceToggle.style.transform = `scale(${1 + (volume / 100)})`
+        voiceToggle.style.backgroundColor = volume > 30 ? '#4CAF50' : '#f0f0f0'
       }
     }
     
-    // 显示临时识别结果
-    if (interimTranscript) {
-      currentMessage.value = interimTranscript
-      console.log('临时识别:', interimTranscript)
+    // 如果音量过低，可能是麦克风未正确工作
+    if (isListening.value && volume < 1) {
+      console.warn('警告：音量过低，可能麦克风未正确工作')
     }
     
-    // 处理最终识别结果
-    if (finalTranscript.trim()) {
-      console.log('最终识别完成:', finalTranscript.trim())
-      // 显示识别成功提示
-      ElMessage.success(`识别完成: "${finalTranscript.trim()}"`)
-      // 清空输入框
-      currentMessage.value = ''
-      // 直接发送语音识别结果
-      handleSend(finalTranscript.trim())
+    // 继续监测
+    if (voiceEnabled.value) {
+      requestAnimationFrame(checkVolume)
     }
+  } catch (error) {
+    console.error('音量监测错误:', error)
   }
-  
-  recognition.value.onerror = (event) => {
-    console.error('语音识别错误:', event.error)
-    isListening.value = false
+}
+    checkVolume()
     
-    switch (event.error) {
-      case 'not-allowed':
-        ElMessage.error('麦克风权限被拒绝，请在浏览器设置中允许使用麦克风')
-        break
-      case 'no-speech':
-        console.log('没有检测到语音，继续监听...')
-        // 没有语音时不显示错误，自动重启
-        setTimeout(() => startSpeechRecognition(), 1000)
-        break
-      case 'audio-capture':
-        ElMessage.error('无法捕获音频，请检查麦克风连接')
-        break
-      case 'network':
-        ElMessage.warning('网络错误，语音识别可能不稳定')
-        setTimeout(() => startSpeechRecognition(), 2000)
-        break
-      case 'aborted':
-        console.log('语音识别被中止')
-        break
-      default:
-        console.log('语音识别错误:', event.error, '自动重试中...')
-        setTimeout(() => startSpeechRecognition(), 1000)
-        break
-    }
-  }
+    console.log('语音识别初始化成功')
   
-  recognition.value.onend = () => {
-    isListening.value = false
-    // 只有在语音功能启用时才自动重启
-    if (voiceEnabled.value && chatStore.selectedCharacter) {
-      setTimeout(() => startSpeechRecognition(), 1000)
+    // 配置事件处理器
+    recognition.value.onstart = () => {
+      isListening.value = true
+      voiceRetryCount.value = 0  // 成功启动时重置重试计数
+      console.log('语音识别已启动')
     }
+    
+    recognition.value.onresult = (event) => {
+      try {
+        console.log('收到识别结果事件:', {
+          resultIndex: event.resultIndex,
+          resultsLength: event.results.length
+        })
+        
+        let finalTranscript = ''
+        let interimTranscript = ''
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i]
+          const transcript = result[0].transcript.trim()
+          
+          if (result.isFinal) {
+            finalTranscript += transcript
+            console.log('最终识别结果:', {
+              text: transcript,
+              confidence: result[0].confidence
+            })
+          } else {
+            interimTranscript += transcript
+            console.log('临时识别结果:', {
+              text: transcript,
+              confidence: result[0].confidence
+            })
+          }
+        }
+        
+        // 显示临时识别结果
+        if (interimTranscript) {
+          currentMessage.value = interimTranscript
+        }
+        
+        // 处理最终识别结果
+        if (finalTranscript.trim()) {
+          const message = finalTranscript.trim()
+          console.log('发送识别结果:', message)
+          ElMessage.success('识别完成')
+          currentMessage.value = ''
+          handleSend(message)
+        }
+      } catch (error) {
+        console.error('处理识别结果时出错:', error)
+        ElMessage.error('语音识别出错，请重试')
+      }
+    }
+    
+    recognition.value.onerror = (event) => {
+      console.error('语音识别错误:', {
+        error: event.error,
+        message: event.message,
+        timestamp: new Date().toISOString()
+      })
+      
+      isListening.value = false
+      
+      switch (event.error) {
+        case 'not-allowed':
+          ElMessage.error('请允许使用麦克风')
+          voiceEnabled.value = false
+          break
+          
+        case 'no-speech':
+          console.log('未检测到语音...')
+          // no-speech 错误不需要重启，这是正常的静音状态
+          break
+          
+        case 'audio-capture':
+          ElMessage.error('未检测到麦克风设备')
+          voiceEnabled.value = false
+          break
+          
+        case 'network':
+          console.warn('网络连接不稳定')
+          voiceRetryCount.value++
+          if (voiceEnabled.value && voiceRetryCount.value < maxRetries) {
+            setTimeout(() => {
+              console.log(`尝试重新连接... (${voiceRetryCount.value}/${maxRetries})`)
+              startSpeechRecognition()
+            }, 2000)
+          } else {
+            console.error('网络重试次数已达上限，停止语音识别')
+            voiceEnabled.value = false
+            ElMessage.error('网络连接问题，请检查网络后手动重启语音')
+          }
+          break
+          
+        case 'aborted':
+          console.log('语音识别已停止')
+          break
+          
+        default:
+          console.error('未知错误:', event.error)
+          ElMessage.error('语音识别出错，请刷新页面重试')
+          break
+      }
+    }
+    
+    recognition.value.onend = () => {
+      console.log('语音识别结束')
+      isListening.value = false
+      
+      // 只有在用户主动启用且没有错误的情况下才自动重启
+      if (voiceEnabled.value && chatStore.selectedCharacter && voiceRetryCount.value < maxRetries) {
+        console.log('准备重新启动语音识别...')
+        setTimeout(() => {
+          if (voiceEnabled.value && !isListening.value) {  // 确保当前没在运行
+            console.log('重新启动语音识别...')
+            startSpeechRecognition()
+          }
+        }, 500)  // 增加延迟避免过快重启
+      } else if (voiceRetryCount.value >= maxRetries) {
+        console.warn('语音识别重试次数已达上限，停止自动重启')
+        voiceEnabled.value = false
+        ElMessage.warning('语音识别遇到问题，请手动重新启动')
+      }
+    }
+    
+    // 初始化成功
+    return true
+  } catch (error) {
+    console.error('语音识别初始化失败:', error)
+    ElMessage.error('语音识别初始化失败，请刷新页面重试')
   }
 }
 
-const startSpeechRecognition = () => {
-  if (recognition.value && !isListening.value && voiceEnabled.value) {
-    try {
-      recognition.value.start()
-    } catch (error) {
+const startSpeechRecognition = async () => {
+  try {
+    console.log('尝试启动语音识别...')
+    
+    // 检查状态
+    const status = {
+      hasRecognition: !!recognition.value,
+      isListening: isListening.value,
+      voiceEnabled: voiceEnabled.value,
+      hasCharacter: !!chatStore.selectedCharacter
+    }
+    console.log('当前状态:', status)
+    
+    // 如果没有初始化或初始化失败，重新初始化
+    if (!recognition.value) {
+      console.log('需要初始化语音识别...')
+      const success = await initSpeechRecognition()
+      if (!success) {
+        throw new Error('语音识别初始化失败')
+      }
+    }
+    
+    // 检查是否可以启动
+    if (!recognition.value) {
+      throw new Error('语音识别未初始化')
+    }
+    
+    if (!voiceEnabled.value) {
+      throw new Error('语音识别未启用')
+    }
+    
+    if (!chatStore.selectedCharacter) {
+      throw new Error('未选择对话角色')
+    }
+    
+    if (isListening.value) {
       console.log('语音识别已在运行')
+      return
+    }
+    
+    // 启动语音识别
+    console.log('开始语音识别...')
+    recognition.value.start()
+    console.log('语音识别启动成功')
+    
+  } catch (error) {
+    console.error('启动语音识别失败:', error)
+    
+    if (error.message.includes('already started')) {
+      console.log('语音识别已在运行，尝试重启...')
+      try {
+        recognition.value.stop()
+        await new Promise(resolve => setTimeout(resolve, 100))
+        recognition.value.start()
+        console.log('语音识别重启成功')
+      } catch (e) {
+        console.error('重启语音识别失败:', e)
+        ElMessage.error('语音识别出错，请刷新页面重试')
+      }
+    } else {
+      ElMessage.error(error.message || '语音识别启动失败，请刷新页面重试')
     }
   }
 }
 
 const toggleVoiceRecognition = () => {
+  console.log('切换语音识别状态...')
+  console.log('之前状态:', voiceEnabled.value)
+  
   voiceEnabled.value = !voiceEnabled.value
+  console.log('新状态:', voiceEnabled.value)
+  
   if (voiceEnabled.value) {
+    console.log('启用语音识别...')
+    voiceRetryCount.value = 0  // 重置重试计数
     startSpeechRecognition()
   } else {
+    console.log('禁用语音识别...')
+    voiceRetryCount.value = 0  // 重置重试计数
     stopSpeechRecognition()
   }
 }
 
 const stopSpeechRecognition = () => {
+  console.log('尝试停止语音识别...')
+  console.log('当前状态:', {
+    hasRecognition: !!recognition.value,
+    isListening: isListening.value
+  })
+  
   if (recognition.value && isListening.value) {
-    recognition.value.stop()
+    try {
+      recognition.value.stop()
+      console.log('语音识别已停止')
+    } catch (error) {
+      console.error('停止语音识别失败:', error)
+    }
     isListening.value = false
+  } else {
+    console.log('不满足停止条件，跳过停止')
   }
 }
 
@@ -343,19 +634,91 @@ const speakText = (text) => {
   // 创建语音合成实例
   const utterance = new SpeechSynthesisUtterance(text)
   
-  // 设置语音参数
-  utterance.lang = 'zh-CN'
-  utterance.rate = 0.9  // 语速稍慢一些
-  utterance.pitch = 1.1  // 音调稍高一些，更亲切
-  utterance.volume = 0.8
+  // 获取当前角色
+  const character = chatStore.selectedCharacter
+  if (!character) return
   
-  // 尝试使用中文语音
+  // 根据角色设置不同的语音参数
+  utterance.lang = 'zh-CN'
+  
+  switch (character.id) {
+    case 'xiyang': // 儿子
+      utterance.pitch = 1.0  // 正常音调
+      utterance.rate = 1.0   // 正常语速
+      utterance.volume = 0.9
+      break
+      
+    case 'meiyang': // 女儿
+      utterance.pitch = 1.2  // 较高音调
+      utterance.rate = 0.9   // 稍慢语速
+      utterance.volume = 0.8
+      break
+      
+    case 'lanyang': // 孙子
+      utterance.pitch = 1.4  // 更高音调
+      utterance.rate = 1.1   // 稍快语速
+      utterance.volume = 1.0
+      break
+  }
+  
+  // 获取可用语音
   const voices = speechSynthesis.getVoices()
-  const chineseVoice = voices.find(voice => 
-    voice.lang.includes('zh') || voice.name.includes('Chinese')
-  )
-  if (chineseVoice) {
-    utterance.voice = chineseVoice
+  console.log('可用语音:', voices.map(v => ({
+    name: v.name,
+    lang: v.lang,
+    default: v.default
+  })))
+  
+  // 为每个角色选择合适的语音
+  let selectedVoice
+  
+  // 优先按角色选择特定语音
+  switch (character.id) {
+    case 'xiyang': // 儿子 - 寻找男性声音
+      selectedVoice = voices.find(v => 
+        (v.lang.includes('zh') || v.lang.includes('cn')) && 
+        (v.name.toLowerCase().includes('male') || 
+         v.name.includes('男') ||
+         v.name.includes('Alex') ||
+         v.name.includes('Daniel'))
+      ) || voices.find(v => v.lang.includes('zh') && v.name.includes('Ting-Ting'))
+      break
+      
+    case 'meiyang': // 女儿 - 寻找女性声音
+      selectedVoice = voices.find(v => 
+        (v.lang.includes('zh') || v.lang.includes('cn')) && 
+        (v.name.toLowerCase().includes('female') || 
+         v.name.includes('女') ||
+         v.name.includes('Mei-Jia') ||
+         v.name.includes('Sin-ji'))
+      ) || voices.find(v => v.lang.includes('zh') && v.name.includes('Ting-Ting'))
+      break
+      
+    case 'lanyang': // 孙子 - 寻找年轻/活泼的声音
+      selectedVoice = voices.find(v => 
+        (v.lang.includes('zh') || v.lang.includes('cn')) && 
+        (v.name.toLowerCase().includes('child') || 
+         v.name.toLowerCase().includes('young') ||
+         v.name.includes('Yu-shu'))
+      ) || voices.find(v => v.lang.includes('zh'))
+      break
+  }
+  
+  // 如果找不到特定语音，按优先级选择中文语音
+  if (!selectedVoice) {
+    selectedVoice = voices.find(v => v.lang === 'zh-CN') ||
+                   voices.find(v => v.lang.includes('zh')) ||
+                   voices.find(v => v.name.includes('Chinese')) ||
+                   voices[0] // 最后的备选
+  }
+  
+  if (selectedVoice) {
+    utterance.voice = selectedVoice
+    console.log('使用语音:', {
+      name: selectedVoice.name,
+      lang: selectedVoice.lang,
+      character: character.name
+    })
   }
   
   // 事件监听
@@ -397,28 +760,48 @@ const scrollToBottom = () => {
 // 生命周期
 onMounted(async () => {
   try {
+    console.log('开始初始化聊天页面...')
+    
+    // 初始化聊天状态
     await chatStore.initialize()
+    console.log('聊天状态初始化完成')
     
     // 加载会话历史
     chatStore.loadConversationsFromLocal()
+    console.log('会话历史加载完成')
     
-    // 等待一小段时间确保fallback角色加载完成
-    setTimeout(async () => {
-      if (chatStore.characters.length === 0) {
-        ElMessage.warning('正在初始化角色数据，请稍候...')
-      } else if (!chatStore.selectedCharacter && chatStore.characters.length > 0) {
-        showCharacterSelector.value = true
+    // 等待角色数据加载
+    await new Promise(resolve => setTimeout(resolve, 500))
+    console.log('可用角色:', chatStore.characters)
+    
+    // 自动选择角色
+    if (!chatStore.selectedCharacter) {
+      // 默认选择喜羊羊（儿子）
+      const defaultCharacter = chatStore.characters.find(c => c.id === 'xiyang')
+      if (defaultCharacter) {
+        console.log('选择默认角色:', defaultCharacter.name)
+        await chatStore.selectCharacter(defaultCharacter)
+      } else {
+        console.log('未找到默认角色，显示角色选择器')
+      showCharacterSelector.value = true
       }
-      
-      // 初始化语音识别
-      await initSpeechRecognition()
-      
-      // 不自动启动语音识别，让用户手动控制
-    }, 500)
+    }
+    
+    // 初始化语音识别
+    console.log('初始化语音识别...')
+    const success = await initSpeechRecognition()
+    if (success) {
+      console.log('语音识别初始化成功，自动启动...')
+      voiceEnabled.value = true
+      await startSpeechRecognition()
+    } else {
+      console.error('语音识别初始化失败')
+      ElMessage.error('语音识别初始化失败，请刷新页面重试')
+    }
     
   } catch (error) {
-    console.error('初始化错误:', error)
-    ElMessage.error('初始化失败，正在使用默认配置')
+    console.error('页面初始化错误:', error)
+    ElMessage.error('初始化失败，请刷新页面重试')
   }
 })
 

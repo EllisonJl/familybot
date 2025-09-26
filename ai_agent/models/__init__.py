@@ -3,7 +3,7 @@
 包含状态模型、路由模型等定义
 """
 
-from .state import ConversationState, Router, IntentAnalysisResult, GraphRAGResult, CharacterResponse
+from models.state import ConversationState, Router, IntentAnalysisResult, GraphRAGResult, CharacterResponse
 
 __all__ = [
     'ConversationState', 

@@ -48,6 +48,36 @@ public class FamilyBotService {
         User savedUser = userRepository.save(user);
         return convertToUserDTO(savedUser);
     }
+    
+    public List<Map<String, Object>> getAllUsers() {
+        return userRepository.findAll().stream()
+            .map(user -> {
+                Map<String, Object> userMap = new HashMap<>();
+                userMap.put("id", user.getUserId());
+                userMap.put("username", user.getUsername());
+                userMap.put("nickname", user.getNickname());
+                userMap.put("avatarUrl", user.getAvatarUrl());
+                return userMap;
+            })
+            .collect(Collectors.toList());
+    }
+    
+    public Map<String, Object> createUserSimple(Map<String, String> userRequest) {
+        User user = new User();
+        user.setUserId(userRequest.getOrDefault("id", "user-" + System.currentTimeMillis()));
+        user.setUsername(userRequest.getOrDefault("username", "默认用户"));
+        user.setNickname(userRequest.getOrDefault("nickname", "默认用户"));
+        user.setAvatarUrl(userRequest.getOrDefault("avatarUrl", "/images/user_default.png"));
+        user.setPasswordHash("dummy_hash");
+        User savedUser = userRepository.save(user);
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("id", savedUser.getUserId());
+        result.put("username", savedUser.getUsername());
+        result.put("nickname", savedUser.getNickname());
+        result.put("avatarUrl", savedUser.getAvatarUrl());
+        return result;
+    }
 
     public Optional<UserDTO> getUserById(Long id) {
         return userRepository.findById(id).map(this::convertToUserDTO);

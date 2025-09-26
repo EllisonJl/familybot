@@ -24,11 +24,11 @@ api.interceptors.request.use(
 // 响应拦截器
 api.interceptors.response.use(
   response => {
-    console.log('收到响应:', response.status, response.config.url)
+    console.log('收到响应:', response.status, response.config.url, response.data)
     return response
   },
   error => {
-    console.error('响应错误:', error.response?.status, error.message)
+    console.error('响应错误:', error.response?.status, error.message, error.response?.data)
     
     // 统一错误处理
     if (error.response?.status === 404) {
@@ -45,15 +45,27 @@ const chatService = {
   // 发送文本消息
   sendTextMessage: async (userId, characterId, message) => {
     try {
-      console.log('发送文本消息:', { userId, characterId, message })
-      const response = await api.post('/chat', {
+      const requestData = {
         userId,
         characterId,
-        message
-      })
+        message,
+        useAgent: true,  // 强制使用AI Agent
+        role: 'elderly'  // 指定角色为老人
+      }
+      console.log('发送文本消息:', requestData)
+      console.log('请求URL:', '/chat')
+      
+      const response = await api.post('/chat', requestData)
+      console.log('收到完整响应:', response)
       return response.data
     } catch (error) {
       console.error('发送文本消息失败:', error)
+      console.error('错误详情:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        config: error.config
+      })
       throw error
     }
   },
@@ -65,7 +77,9 @@ const chatService = {
       const response = await api.post('/chat', {
         userId,
         characterId,
-        audioBase64
+        audioBase64,
+        useAgent: true,  // 强制使用AI Agent
+        role: 'elderly'  // 指定角色为老人
       })
       return response.data
     } catch (error) {

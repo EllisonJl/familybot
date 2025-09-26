@@ -36,6 +36,19 @@ class FamilyBotRouter:
         """
         try:
             print(f"🔍 开始分析用户查询: {state.user_input[:50]}...")
+            print(f"👤 用户角色: {state.role}")
+            print(f"🎭 当前角色: {state.selected_character}")
+            
+            # 如果已经指定了角色，直接使用
+            if state.selected_character:
+                print(f"✨ 使用指定角色: {state.selected_character}")
+                state.router = Router(
+                    type=f"character-{state.selected_character}",
+                    logic=f"用户已选择角色: {state.selected_character}",
+                    confidence=1.0,
+                    character_preference=state.selected_character
+                )
+                return state
             
             # 构建分析消息
             messages = [

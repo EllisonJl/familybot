@@ -126,7 +126,7 @@ const handleClose = () => {
   text-align: center;
 }
 
-.character-card:hover {
+.character-card:hover:not(.selected) {
   border-color: #409eff;
   box-shadow: 0 4px 12px rgba(64, 158, 255, 0.2);
   transform: translateY(-2px);

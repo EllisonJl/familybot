@@ -4,7 +4,6 @@ import cn.qiniu.familybot.dto.*;
 import cn.qiniu.familybot.model.Conversation;
 import cn.qiniu.familybot.service.FamilyBotService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,7 +17,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor
-@CrossOrigin(origins = {"http://localhost:8080", "http://localhost:5173"}) // 允许的源
+@CrossOrigin(originPatterns = {"http://localhost:*", "http://127.0.0.1:*"}, allowCredentials = "true")
 public class FamilyBotController {
     
     private final FamilyBotService familyBotService;
@@ -85,10 +84,10 @@ public class FamilyBotController {
         try {
             String result = familyBotService.switchCharacter(userId, characterId);
             
-            if ("角色切换成功！".equals(result)) {
+            if (result.contains("成功")) {
                 return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "message", "角色切换成功",
+                    "message", result,
                     "characterId", characterId
                 ));
             } else {
@@ -138,6 +137,33 @@ public class FamilyBotController {
         }
     }
     
+    /**
+     * 获取所有用户
+     */
+    @GetMapping("/users")
+    public ResponseEntity<List<Map<String, Object>>> getAllUsers() {
+        try {
+            // 返回简化的用户列表，实际项目中应该有专门的UserDTO
+            List<Map<String, Object>> users = familyBotService.getAllUsers();
+            return ResponseEntity.ok(users);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    /**
+     * 创建用户
+     */
+    @PostMapping("/users")
+    public ResponseEntity<Map<String, Object>> createUser(@RequestBody Map<String, String> userRequest) {
+        try {
+            Map<String, Object> user = familyBotService.createUserSimple(userRequest);
+            return ResponseEntity.ok(user);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
     /**
      * 健康检查
      */

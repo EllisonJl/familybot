@@ -40,13 +40,16 @@ public class AIAgentService {
         requestBody.put("user_id", userId);
         requestBody.put("character_id", characterId);
         requestBody.put("message", message);
+        requestBody.put("use_agent", true);
+        requestBody.put("role", "elderly");
+        requestBody.put("thread_id", userId + "_" + characterId);  // 使用固定的thread_id以保持对话连续性
 
         return webClient.post()
                 .uri("/chat")
                 .bodyValue(requestBody)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
-                .timeout(Duration.ofSeconds(30))
+                .timeout(Duration.ofSeconds(60))
                 .map(this::parseAIResponse)
                 .onErrorMap(ex -> new RuntimeException("AI Agent调用失败: " + ex.getMessage(), ex));
     }
@@ -59,6 +62,9 @@ public class AIAgentService {
         requestBody.put("user_id", userId);
         requestBody.put("character_id", characterId);
         requestBody.put("audio_base64", audioBase64);
+        requestBody.put("use_agent", true);
+        requestBody.put("role", "elderly");
+        requestBody.put("thread_id", userId + "_" + characterId);  // 使用固定的thread_id以保持对话连续性
 
         return webClient.post()
                 .uri("/chat/audio")

@@ -48,4 +48,19 @@ public class ChatRequest {
      * 音频数据（Base64编码，语音输入时使用）
      */
     private String audioBase64;
+    
+    /**
+     * 是否使用AI Agent
+     */
+    private Boolean useAgent = true;
+    
+    /**
+     * 用户角色（elderly/adult/child）
+     */
+    private String role = "elderly";
+    
+    /**
+     * 线程ID（用于会话连续性）
+     */
+    private String threadId;
 }
