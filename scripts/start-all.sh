@@ -25,31 +25,36 @@ check_port 8080 "前端"
 check_port 8081 "后端"  
 check_port 8001 "AI Agent"
 
+# 获取项目根目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 echo "🔧 启动后端服务 (Spring Boot)..."
-cd ..
+cd "$PROJECT_ROOT"
+export MAVEN_OPTS="-Xmx1G -Xms512m"  # 内存优化配置
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=integrated > logs/backend.log 2>&1 &
 BACKEND_PID=$!
 echo "   后端 PID: $BACKEND_PID"
 
 echo "🤖 启动AI Agent (Python FastAPI)..."
-cd ai_agent
+cd "$PROJECT_ROOT/ai_agent"
 source venv/bin/activate
 python main.py > ../logs/ai_agent.log 2>&1 &
 AI_AGENT_PID=$!
 echo "   AI Agent PID: $AI_AGENT_PID"
-cd ../scripts
+cd "$PROJECT_ROOT"
 
 echo "⏳ 等待后端服务启动 (15秒)..."
 sleep 15
 
 echo "🌐 启动前端开发服务器 (Vue.js)..."
-cd ../frontend
+cd "$PROJECT_ROOT/frontend"
 npm run dev > ../logs/frontend.log 2>&1 &
 FRONTEND_PID=$!
 echo "   前端 PID: $FRONTEND_PID"
-cd ../scripts
 
-# 保存进程ID到文件
+# 保存进程ID到文件（保存到scripts目录）
+cd "$SCRIPT_DIR"
 echo "$BACKEND_PID" > .backend_pid
 echo "$AI_AGENT_PID" > .ai_agent_pid  
 echo "$FRONTEND_PID" > .frontend_pid

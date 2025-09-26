@@ -83,11 +83,7 @@ public class FamilyBotService {
         return userRepository.findById(id).map(this::convertToUserDTO);
     }
 
-    public List<UserDTO> getAllUsers() {
-        return userRepository.findAll().stream()
-                .map(this::convertToUserDTO)
-                .collect(Collectors.toList());
-    }
+    // 重复方法已删除
 
     // --- Character Management ---
     public CharacterDTO createCharacter(CharacterDTO characterDTO) {

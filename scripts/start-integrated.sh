@@ -75,7 +75,7 @@ echo -e "${GREEN}✅ 后端已启动 (PID: $BACKEND_PID)${NC}"
 # 等待后端启动
 echo "⏳ 等待后端服务初始化..."
 for i in {1..60}; do
-    if curl -s http://localhost:8080/api/v1/health > /dev/null 2>&1; then
+    if curl -s http://localhost:8081/api/v1/health > /dev/null 2>&1; then
         echo -e "${GREEN}✅ 后端服务就绪${NC}"
         break
     fi

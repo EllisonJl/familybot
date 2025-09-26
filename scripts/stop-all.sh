@@ -3,6 +3,10 @@
 # FamilyBot 停止脚本
 # 使用方法: ./stop-all.sh
 
+# 获取脚本目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 echo "🛑 停止 FamilyBot 所有服务..."
 echo ""
 
