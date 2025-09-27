@@ -33,9 +33,16 @@ public class AIAgentService {
     }
 
     /**
-     * 发送文本消息到AI Agent
+     * 发送文本消息到AI Agent（不带音色配置）
      */
     public Mono<AIAgentResponse> sendTextMessage(String userId, String characterId, String message) {
+        return sendTextMessage(userId, characterId, message, null);
+    }
+    
+    /**
+     * 发送文本消息到AI Agent（带音色配置）
+     */
+    public Mono<AIAgentResponse> sendTextMessage(String userId, String characterId, String message, Map<String, Object> voiceConfig) {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("user_id", userId);
         requestBody.put("character_id", characterId);
@@ -43,6 +50,11 @@ public class AIAgentService {
         requestBody.put("use_agent", true);
         requestBody.put("role", "elderly");
         requestBody.put("thread_id", userId + "_" + characterId);  // 使用固定的thread_id以保持对话连续性
+        
+        // 添加音色配置
+        if (voiceConfig != null) {
+            requestBody.put("voice_config", voiceConfig);
+        }
 
         return webClient.post()
                 .uri("/chat")

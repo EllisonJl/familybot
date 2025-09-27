@@ -125,6 +125,26 @@ public class FamilyBotController {
     }
     
     /**
+     * 获取特定用户和角色的对话历史
+     */
+    @GetMapping("/conversations/{userId}/{characterId}")
+    public ResponseEntity<List<Conversation>> getUserCharacterConversations(
+        @PathVariable String userId,
+        @PathVariable String characterId,
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "20") int size
+    ) {
+        try {
+            List<Conversation> conversations = familyBotService.getConversationHistory(
+                userId, characterId, page, size
+            );
+            return ResponseEntity.ok(conversations);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    /**
      * 获取用户统计信息
      */
     @GetMapping("/users/{userId}/stats")

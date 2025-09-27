@@ -63,4 +63,9 @@ public class ChatRequest {
      * 线程ID（用于会话连续性）
      */
     private String threadId;
+    
+    /**
+     * 音色配置（可选）
+     */
+    private Map<String, Object> voiceConfig;
 }

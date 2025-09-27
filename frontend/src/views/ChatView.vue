@@ -195,7 +195,7 @@ const handleSend = async (inputText = null) => {
     if (aiMessage && aiMessage.content && ttsEnabled.value) {
       // 稍微延迟播放，确保消息已经显示
       setTimeout(() => {
-        speakText(aiMessage.content)
+        playAIAudio(aiMessage)
       }, 500)
     }
   } catch (error) {
@@ -624,128 +624,159 @@ const stopSpeechRecognition = () => {
   }
 }
 
-// TTS 文本转语音功能
-const speakText = (text) => {
-  if (!ttsEnabled.value || !text.trim()) return
-  
-  // 停止当前播放
-  speechSynthesis.cancel()
-  
-  // 创建语音合成实例
-  const utterance = new SpeechSynthesisUtterance(text)
-  
-  // 获取当前角色
-  const character = chatStore.selectedCharacter
-  if (!character) return
-  
-  // 根据角色设置不同的语音参数
-  utterance.lang = 'zh-CN'
-  
-  switch (character.id) {
-    case 'xiyang': // 儿子
-      utterance.pitch = 1.0  // 正常音调
-      utterance.rate = 1.0   // 正常语速
-      utterance.volume = 0.9
-      break
-      
-    case 'meiyang': // 女儿
-      utterance.pitch = 1.2  // 较高音调
-      utterance.rate = 0.9   // 稍慢语速
-      utterance.volume = 0.8
-      break
-      
-    case 'lanyang': // 孙子
-      utterance.pitch = 1.4  // 更高音调
-      utterance.rate = 1.1   // 稍快语速
-      utterance.volume = 1.0
-      break
-  }
-  
-  // 获取可用语音
-  const voices = speechSynthesis.getVoices()
-  console.log('可用语音:', voices.map(v => ({
-    name: v.name,
-    lang: v.lang,
-    default: v.default
-  })))
-  
-  // 为每个角色选择合适的语音
-  let selectedVoice
-  
-  // 优先按角色选择特定语音
-  switch (character.id) {
-    case 'xiyang': // 儿子 - 寻找男性声音
-      selectedVoice = voices.find(v => 
-        (v.lang.includes('zh') || v.lang.includes('cn')) && 
-        (v.name.toLowerCase().includes('male') || 
-         v.name.includes('男') ||
-         v.name.includes('Alex') ||
-         v.name.includes('Daniel'))
-      ) || voices.find(v => v.lang.includes('zh') && v.name.includes('Ting-Ting'))
-      break
-      
-    case 'meiyang': // 女儿 - 寻找女性声音
-      selectedVoice = voices.find(v => 
-        (v.lang.includes('zh') || v.lang.includes('cn')) && 
-        (v.name.toLowerCase().includes('female') || 
-         v.name.includes('女') ||
-         v.name.includes('Mei-Jia') ||
-         v.name.includes('Sin-ji'))
-      ) || voices.find(v => v.lang.includes('zh') && v.name.includes('Ting-Ting'))
-      break
-      
-    case 'lanyang': // 孙子 - 寻找年轻/活泼的声音
-      selectedVoice = voices.find(v => 
-        (v.lang.includes('zh') || v.lang.includes('cn')) && 
-        (v.name.toLowerCase().includes('child') || 
-         v.name.toLowerCase().includes('young') ||
-         v.name.includes('Yu-shu'))
-      ) || voices.find(v => v.lang.includes('zh'))
-      break
-  }
-  
-  // 如果找不到特定语音，按优先级选择中文语音
-  if (!selectedVoice) {
-    selectedVoice = voices.find(v => v.lang === 'zh-CN') ||
-                   voices.find(v => v.lang.includes('zh')) ||
-                   voices.find(v => v.name.includes('Chinese')) ||
-                   voices[0] // 最后的备选
-  }
-  
-  if (selectedVoice) {
-    utterance.voice = selectedVoice
-    console.log('使用语音:', {
-      name: selectedVoice.name,
-      lang: selectedVoice.lang,
-      character: character.name
-    })
-  }
-  
-  // 事件监听
-  utterance.onstart = () => {
-    isSpeaking.value = true
-    console.log('开始语音播放:', text)
-  }
-  
-  utterance.onend = () => {
+// 全局音频对象，用于管理播放状态
+let currentAudio = null
+
+// 停止当前音频播放
+const stopCurrentAudio = () => {
+  if (currentAudio) {
+    console.log('🛑 停止当前音频播放')
+    currentAudio.pause()
+    currentAudio.currentTime = 0
+    currentAudio = null
     isSpeaking.value = false
-    console.log('语音播放完成')
   }
-  
-  utterance.onerror = (event) => {
-    isSpeaking.value = false
-    console.error('语音播放错误:', event.error)
-  }
-  
-  // 开始播放
-  speechSynthesis.speak(utterance)
 }
+
+// 只播放AI生成的音频，不使用浏览器TTS
+const playAIAudio = (aiMessage) => {
+  if (!ttsEnabled.value) return
+  
+  console.log('🎵 准备播放AI音频:', aiMessage)
+  
+  // 先停止当前音频
+  stopCurrentAudio()
+  
+  // 优先使用audioBase64数据播放
+  if (aiMessage.audioBase64) {
+    console.log('✨ 使用audioBase64数据播放音频')
+    playAudioFromBase64(aiMessage.audioBase64)
+    return
+  }
+  
+  // 如果有audioUrl，尝试使用完整URL播放
+  if (aiMessage.audioUrl) {
+    const fullAudioUrl = aiMessage.audioUrl.startsWith('http') 
+      ? aiMessage.audioUrl 
+      : `http://localhost:8001${aiMessage.audioUrl}`
+    console.log('✨ 使用完整URL播放音频:', fullAudioUrl)
+    playAudioFromUrl(fullAudioUrl)
+    return
+  }
+  
+  // 如果没有AI音频，不播放任何音频（不使用浏览器TTS）
+  console.log('❌ 没有AI音频数据，跳过播放')
+  ElMessage.warning('AI音频生成失败，请重试')
+}
+
+// 使用Base64数据播放音频
+const playAudioFromBase64 = async (audioBase64) => {
+  try {
+    console.log('📼 创建Base64音频Blob...')
+    
+    // 将Base64转换为Blob
+    const binaryData = atob(audioBase64)
+    const arrayBuffer = new ArrayBuffer(binaryData.length)
+    const uint8Array = new Uint8Array(arrayBuffer)
+    for (let i = 0; i < binaryData.length; i++) {
+      uint8Array[i] = binaryData.charCodeAt(i)
+    }
+    
+    const audioBlob = new Blob([arrayBuffer], { type: 'audio/wav' })
+    const audioUrl = URL.createObjectURL(audioBlob)
+    
+    console.log('✅ Blob创建成功，大小:', audioBlob.size, '字节')
+    
+    const audio = new Audio()
+    currentAudio = audio // 设置为当前音频
+    
+    // 处理音频播放事件
+    audio.onloadstart = () => console.log('📼 开始加载Base64音频...')
+    audio.onloadeddata = () => console.log('✅ Base64音频数据加载完成')
+    audio.onplay = () => {
+      console.log('🎵 开始播放Base64音频')
+      isSpeaking.value = true
+    }
+    audio.onended = () => {
+      console.log('✅ Base64音频播放结束')
+      isSpeaking.value = false
+      currentAudio = null
+      URL.revokeObjectURL(audioUrl) // 清理URL
+    }
+    audio.onerror = (e) => {
+      console.error('❌ Base64音频播放失败:', e)
+      isSpeaking.value = false
+      currentAudio = null
+      URL.revokeObjectURL(audioUrl) // 清理URL
+      ElMessage.warning('AI音频播放失败，使用系统TTS')
+    }
+    
+    // 设置音频源并播放
+    audio.src = audioUrl
+    
+    try {
+      await audio.play()
+      console.log('✅ 音频播放启动成功')
+    } catch (playError) {
+      console.error('❌ 音频play()失败:', playError)
+      if (playError.name === 'AbortError') {
+        console.log('⚠️ 音频播放被中断，可能是切换了新音频')
+      } else {
+        ElMessage.warning('AI音频播放失败')
+      }
+      currentAudio = null
+      URL.revokeObjectURL(audioUrl)
+    }
+    
+  } catch (error) {
+    console.error('❌ Base64音频处理失败:', error)
+    isSpeaking.value = false
+    currentAudio = null
+    ElMessage.warning('AI音频解析失败，使用系统TTS')
+  }
+}
+
+// 播放音频URL的函数（备用）
+const playAudioFromUrl = (audioUrl) => {
+  try {
+    const audio = new Audio()
+    
+    // 处理音频播放事件
+    audio.onloadstart = () => console.log('📼 开始加载音频...')
+    audio.onloadeddata = () => console.log('✅ 音频数据加载完成')
+    audio.onplay = () => {
+      console.log('🎵 开始播放音频')
+      isSpeaking.value = true
+    }
+    audio.onended = () => {
+      console.log('✅ 音频播放结束')
+      isSpeaking.value = false
+    }
+    audio.onerror = (e) => {
+      console.error('❌ 音频播放失败:', e)
+      console.error('音频URL:', audioUrl)
+      isSpeaking.value = false
+      // 如果音频播放失败，使用TTS作为备选
+      ElMessage.warning('音频播放失败，使用系统TTS')
+    }
+    
+    // 设置音频源并播放
+    audio.src = audioUrl
+    audio.load()
+    audio.play()
+    
+  } catch (error) {
+    console.error('❌ 创建audio元素失败:', error)
+    isSpeaking.value = false
+  }
+}
+
+// 已删除浏览器TTS功能 - 只使用AI Agent生成的音频
 
 const toggleTTS = () => {
   ttsEnabled.value = !ttsEnabled.value
   if (!ttsEnabled.value) {
-    speechSynthesis.cancel() // 关闭TTS时停止当前播放
-    isSpeaking.value = false
+    stopCurrentAudio() // 关闭TTS时停止AI音频
   }
 }
 

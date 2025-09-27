@@ -6,6 +6,7 @@
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import json
+import re
 from openai import OpenAI
 from config import Config, CHARACTER_CONFIGS
 
@@ -35,7 +36,7 @@ class CharacterAgent:
         self.context_memory: Dict[str, Any] = {}
         self.emotional_state = "neutral"  # 情绪状态
         
-    def get_system_prompt(self, user_context: Optional[Dict] = None) -> str:
+    def get_system_prompt(self, user_context: Optional[Dict] = None, chat_analysis: Optional[Dict] = None) -> str:
         """
         获取角色的系统提示词
         
@@ -65,8 +66,118 @@ class CharacterAgent:
             for key, value in self.context_memory.items():
                 memory_info += f"- {key}: {value}\n"
             base_prompt += memory_info
-            
+        
+        # 根据聊天类型添加相应指令
+        if chat_analysis:
+            if chat_analysis["type"] == "greeting":
+                length_instruction = "\n\n回复指导：\n- 给出简短亲切的问候回复（1-2句话）\n- 保持温暖自然的语调"
+                base_prompt += length_instruction
+                
+            elif chat_analysis["type"] == "casual":
+                length_instruction = "\n\n回复指导：\n- 给出简洁自然的回复（2-3句话）\n- 适当延续话题，保持轻松愉快"
+                base_prompt += length_instruction
+                
+            elif chat_analysis["type"] == "emotional_support":
+                length_instruction = "\n\n回复指导：\n- 给出温暖体贴的回复（3-4句话）\n- 重点关注情感共鸣和心理安慰"
+                base_prompt += length_instruction
+                
+            elif chat_analysis["type"] == "problem_solving":
+                # 问题解决场景需要Chain of Thought思维
+                cot_instruction = "\n\n深度思考指导（Chain of Thought）：\n"
+                cot_instruction += "请在内心进行以下思考过程（但不要在回复中显示思考过程）：\n"
+                cot_instruction += "1. **问题分析**: 具体是什么问题？严重程度如何？\n"
+                cot_instruction += "2. **原因判断**: 可能的原因有哪些？最主要的是什么？\n"
+                cot_instruction += "3. **知识调用**: 需要什么专业知识？有什么相关经验？\n"
+                cot_instruction += "4. **方案制定**: 有哪些解决方案？优先级如何？\n"
+                cot_instruction += "5. **可行性评估**: 方案是否适合父母的实际情况？\n"
+                cot_instruction += "6. **风险考虑**: 有什么需要注意的风险或副作用？\n\n"
+                cot_instruction += "然后给出详细实用的建议（4-6句话），包含：\n"
+                cot_instruction += "- 具体的解决步骤\n- 注意事项\n- 何时需要寻求专业帮助"
+                base_prompt += cot_instruction
+        
         return base_prompt
+    
+    def detect_chat_type(self, user_message: str) -> Dict[str, Any]:
+        """
+        检测聊天类型，用于决定回复长度和风格
+        
+        Args:
+            user_message: 用户消息
+            
+        Returns:
+            包含聊天类型、长度级别等信息的字典
+        """
+        message_lower = user_message.lower()
+        
+        # 问题解决类关键词（需要详细回复）
+        problem_keywords = [
+            '怎么办', '如何', '什么原因', '为什么', '怎样', '方法', '建议', '帮助',
+            '问题', '困难', '麻烦', '不会', '不知道', '解决', '治疗', '病', '疼',
+            '头疼', '失眠', '感冒', '咳嗽', '血压', '糖尿病', '心脏'
+        ]
+        
+        # 情感支持类关键词（需要适中回复）
+        emotional_keywords = [
+            '想你', '想念', '孤独', '寂寞', '难过', '担心', '害怕', '紧张',
+            '开心', '高兴', '感动', '回忆', '以前', '小时候'
+        ]
+        
+        # 日常闲聊关键词（简短回复）
+        casual_keywords = [
+            '你好', '早上好', '晚安', '吃饭', '天气', '今天', '昨天', '明天',
+            '看电视', '散步', '睡觉', '起床', '在干什么', '忙吗'
+        ]
+        
+        # 问候语模式（简短回复）
+        greeting_patterns = [
+            r'^(你好|早上好|中午好|晚上好|晚安)',
+            r'(最近.*好吗|身体.*好吗|还好吗)$',
+            r'^(在.*吗|忙.*吗)'
+        ]
+        
+        # 检测类型
+        chat_type = "casual"
+        confidence = 0.5
+        max_tokens = 80  # 默认简短回复
+        
+        # 检查问题解决类
+        for keyword in problem_keywords:
+            if keyword in user_message:
+                chat_type = "problem_solving"
+                confidence = 0.9
+                max_tokens = 250  # 允许较长回复
+                break
+        
+        # 检查情感支持类
+        if chat_type == "casual":
+            for keyword in emotional_keywords:
+                if keyword in user_message:
+                    chat_type = "emotional_support"
+                    confidence = 0.8
+                    max_tokens = 150  # 中等长度
+                    break
+        
+        # 检查问候语
+        if chat_type == "casual":
+            for pattern in greeting_patterns:
+                if re.search(pattern, user_message):
+                    chat_type = "greeting"
+                    confidence = 0.9
+                    max_tokens = 60  # 很简短
+                    break
+        
+        # 根据消息长度调整
+        if len(user_message) < 10:
+            max_tokens = min(max_tokens, 80)  # 用户消息很短，回复也要简洁
+        elif len(user_message) > 50:
+            max_tokens = min(max_tokens + 30, 300)  # 用户消息长，可以适当增加
+        
+        return {
+            "type": chat_type,
+            "confidence": confidence,
+            "max_tokens": max_tokens,
+            "length_level": "short" if max_tokens <= 80 else "medium" if max_tokens <= 150 else "long"
+        }
     
     def generate_response(
         self, 
@@ -84,11 +195,14 @@ class CharacterAgent:
             包含回应内容、情绪等信息的字典
         """
         try:
+            # 检测聊天类型和输出长度
+            chat_analysis = self.detect_chat_type(user_message)
+            
             # 构建消息历史
             messages = [
                 {
                     "role": "system", 
-                    "content": self.get_system_prompt(user_context)
+                    "content": self.get_system_prompt(user_context, chat_analysis)
                 }
             ]
             
@@ -110,12 +224,12 @@ class CharacterAgent:
                 "content": user_message
             })
             
-            # 调用LLM生成回应
+            # 调用LLM生成回应（动态调整max_tokens）
             response = self.client.chat.completions.create(
                 model=Config.LLM_MODEL,
                 messages=messages,
                 temperature=0.7,
-                max_tokens=500
+                max_tokens=chat_analysis["max_tokens"]
             )
             
             assistant_response = response.choices[0].message.content
@@ -125,7 +239,8 @@ class CharacterAgent:
                 "timestamp": datetime.now().isoformat(),
                 "user_message": user_message,
                 "assistant_response": assistant_response,
-                "user_context": user_context or {}
+                "user_context": user_context or {},
+                "chat_analysis": chat_analysis
             })
             
             # 限制历史长度

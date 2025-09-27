@@ -43,14 +43,15 @@ api.interceptors.response.use(
 
 const chatService = {
   // 发送文本消息
-  sendTextMessage: async (userId, characterId, message) => {
+  sendTextMessage: async (userId, characterId, message, voiceConfig = null) => {
     try {
       const requestData = {
         userId,
         characterId,
         message,
         useAgent: true,  // 强制使用AI Agent
-        role: 'elderly'  // 指定角色为老人
+        role: 'elderly',  // 指定角色为老人
+        voiceConfig: voiceConfig  // 添加音色配置
       }
       console.log('发送文本消息:', requestData)
       console.log('请求URL:', '/chat')
@@ -96,6 +97,43 @@ const chatService = {
     } catch (error) {
       console.error('获取角色列表失败:', error)
       throw error
+    }
+  },
+
+  // 生成欢迎消息TTS音频
+  generateWelcomeTTS: async (userId, characterId, message, voiceConfig) => {
+    try {
+      console.log('🎵 调用AI Agent生成欢迎消息TTS...', { characterId, voiceConfig })
+      
+      // 直接调用AI Agent的TTS接口 (使用query参数)
+      const params = new URLSearchParams({
+        text: message,
+        voice: voiceConfig.voice,
+        speed: voiceConfig.speed || 1.0,
+        user_id: userId
+      })
+      const aiAgentResponse = await fetch(`http://localhost:8001/tts?${params}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (aiAgentResponse.ok) {
+        const ttsData = await aiAgentResponse.json()
+        console.log('✅ 欢迎消息TTS生成成功', ttsData)
+        return {
+          audioBase64: ttsData.audio_base64,
+          audioUrl: ttsData.audio_url
+        }
+      } else {
+        console.warn('⚠️ AI Agent TTS请求失败:', aiAgentResponse.status)
+        return null
+      }
+      
+    } catch (error) {
+      console.error('❌ 欢迎消息TTS生成失败:', error)
+      return null
     }
   },
 

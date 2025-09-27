@@ -54,7 +54,9 @@ const defaultCharacters = [
     name: '喜羊羊',
     role: '儿子',
     personality: '聪明、勇敢、孝顺、责任心强，总是关心家人的安全和健康',
-    avatarUrl: '/images/character_xiyang.png'
+    avatarUrl: '/images/character_xiyang.png',
+    voice: 'Ethan',  // 成熟男性声音 - 儿子
+    voice_speed: 1.0
   },
   {
     id: 'meiyang',
@@ -62,7 +64,9 @@ const defaultCharacters = [
     name: '美羊羊',
     role: '女儿',
     personality: '温柔、细心、贴心、善解人意，是父母的贴心小棉袄',
-    avatarUrl: '/images/character_meiyang.png'
+    avatarUrl: '/images/character_meiyang.png',
+    voice: 'Cherry',  // 温柔女性声音 - 女儿
+    voice_speed: 0.9
   },
   {
     id: 'lanyang',
@@ -70,7 +74,9 @@ const defaultCharacters = [
     name: '懒羊羊',
     role: '孙子',
     personality: '天真烂漫、活泼可爱、爱撒娇、充满童趣，是爷爷奶奶的开心果',
-    avatarUrl: '/images/character_lanyang.png'
+    avatarUrl: '/images/character_lanyang.png',
+    voice: 'Dylan',  // 年轻活泼声音 - 孙子
+    voice_speed: 1.1
   }
 ]
     
@@ -81,7 +87,10 @@ const defaultCharacters = [
         characters.value = apiCharacters.map(char => ({
           ...char,
           id: char.characterId || char.id,  // 确保有id字段
-          characterId: char.characterId || char.id  // 确保有characterId字段
+          characterId: char.characterId || char.id,  // 确保有characterId字段
+          // 保证音色配置存在
+          voice: char.voice || (char.id === 'xiyang' ? 'Ethan' : char.id === 'meiyang' ? 'Cherry' : 'Dylan'),
+          voice_speed: char.voice_speed || 1.0
         }))
         console.log('角色数据加载成功:', characters.value.length, '个角色')
         console.log('第一个角色数据:', characters.value[0])
@@ -102,17 +111,24 @@ const defaultCharacters = [
   }
   
   const selectCharacter = async (character) => {
+    console.log('🎭 开始选择角色:', character.name, '角色数据:', character)
+    
     selectedCharacter.value = character
     
-    // 清空当前对话
+    // 强制清空当前对话和缓存
     messages.value = []
+    console.log('🗨️ 已清空消息列表')
     
-    // 保存到本地存储
+    // 清除相关缓存（防止干扰）
+    localStorage.removeItem('conversationHistory')
+    localStorage.removeItem('welcomeMessageSent')
     localStorage.setItem('selectedCharacter', JSON.stringify(character))
+    console.log('🧽 已清除相关缓存')
     
-    console.log('已选择角色:', character.name)
+    console.log('✅ 已选择角色:', character.name)
     
-    // AI先发送欢迎消息
+    // 强制发送欢迎消息（不管以前是否发过）
+    console.log('🚀 开始发送欢迎消息...')
     await sendWelcomeMessage(character)
   }
   
@@ -120,8 +136,11 @@ const defaultCharacters = [
     try {
       isLoading.value = true
       
+      console.log('🎆 强制发送欢迎消息给:', character.name, '角色ID:', character.id)
+      
       // 使用默认欢迎消息，让AI主动关怀用户
       const welcomeMessage = getDefaultWelcomeMessage(character)
+      console.log('📝 欢迎消息内容:', welcomeMessage.substring(0, 50) + '...')
       
       const aiMessage = {
         id: `welcome-${Date.now()}`,
@@ -133,9 +152,46 @@ const defaultCharacters = [
         isWelcome: true
       }
       
+      // 生成欢迎消息的TTS音频
+      try {
+        console.log('🎵 为欢迎消息生成TTS音频...', character.name)
+        
+        // 获取角色的音色配置（确保有默认值）
+        const voiceConfig = {
+          voice: character.voice || (character.id === 'xiyang' ? 'Ethan' : character.id === 'meiyang' ? 'Cherry' : 'Dylan'),
+          speed: character.voice_speed || 1.0
+        }
+        console.log('🎵 音色配置:', voiceConfig)
+        
+        // 调用AI Agent生成TTS音频
+        const ttsResponse = await chatService.generateWelcomeTTS(
+          currentUser.value.id,
+          character.characterId || character.id,
+          welcomeMessage,
+          voiceConfig
+        )
+        
+        if (ttsResponse && (ttsResponse.audioBase64 || ttsResponse.audioUrl)) {
+          aiMessage.audioBase64 = ttsResponse.audioBase64
+          aiMessage.audioUrl = ttsResponse.audioUrl
+          console.log('✅ 欢迎消息 TTS 生成成功')
+        }
+      } catch (ttsError) {
+        console.warn('⚠️ 欢迎消息 TTS 生成失败:', ttsError)
+        // TTS失败不影响欢迎消息发送
+      }
+      
       messages.value.push(aiMessage)
       
-      console.log('AI欢迎消息已发送:', aiMessage.content)
+      console.log('✅ AI欢迎消息已添加到消息列表:', aiMessage.content.substring(0, 30) + '...')
+      console.log('📊 当前消息数量:', messages.value.length)
+      
+      // 如果有音频数据，尝试播放
+      if (aiMessage.audioBase64 || aiMessage.audioUrl) {
+        console.log('🎶 欢迎消息包含音频，将自动播放')
+      } else {
+        console.log('⚠️ 欢迎消息没有音频数据（TTS可能失败）')
+      }
       
     } catch (error) {
       console.error('发送欢迎消息失败:', error)
@@ -221,10 +277,19 @@ const defaultCharacters = [
         message: content
       })
       
+      // 获取角色的音色配置
+      const voiceConfig = {
+        voice: selectedCharacter.value.voice,  // 传递角色音色
+        speed: selectedCharacter.value.voice_speed || 1.0
+      }
+      
+      console.log('🎵 传递音色配置:', voiceConfig)
+      
       const response = await chatService.sendTextMessage(
         currentUser.value.id,
         characterId,
-        content
+        content,
+        voiceConfig  // 添加音色配置参数
       )
       
       // 添加AI回复
@@ -236,7 +301,8 @@ const defaultCharacters = [
         timestamp: new Date().toISOString(),
         avatar: selectedCharacter.value.avatarUrl,
         characterName: response.characterName || selectedCharacter.value.name,
-        audioUrl: response.aiAudioUrl
+        audioUrl: response.aiAudioUrl,
+        audioBase64: response.audioBase64  // 添加audioBase64数据
       }
       
       messages.value.push(aiMessage)

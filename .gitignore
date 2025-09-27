@@ -80,3 +80,26 @@ target/
 
 # Maven 包装器
 .mvn/wrapper/maven-wrapper.jar
+# Python缓存文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+# 大文件和依赖目录
+node_modules/
+venv/
+target/
+frontend/node_modules/
+frontend/dist/
+ai_agent/venv/
+*.log
+logs/
+*.db
+ai_agent/data/*.db
+# 音频视频文件
+*.mp4
+*.wav
+*.mp3
+*.m4a
+*.avi
+*.mov

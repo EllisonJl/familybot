@@ -127,11 +127,12 @@ public class FamilyBotService {
             AIAgentService.AIAgentResponse aiResponse;
             
             if (chatRequest.getMessage() != null && !chatRequest.getMessage().isEmpty()) {
-                // 文本消息
+                // 文本消息，传递音色配置
                 aiResponse = aiAgentService.sendTextMessage(
                     user.getId().toString(), 
                     characterMappedId, 
-                    chatRequest.getMessage()
+                    chatRequest.getMessage(),
+                    chatRequest.getVoiceConfig()  // 传递音色配置
                 ).block();
             } else if (chatRequest.getAudioBase64() != null && !chatRequest.getAudioBase64().isEmpty()) {
                 // 语音消息

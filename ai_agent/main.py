@@ -27,6 +27,7 @@ class ChatRequest(BaseModel):
     use_agent: Optional[bool] = True
     role: Optional[str] = "elderly"
     thread_id: Optional[str] = None
+    voice_config: Optional[Dict[str, Any]] = None  # 添加音色配置字段
 
 
 class ChatResponse(BaseModel):
@@ -37,6 +38,8 @@ class ChatResponse(BaseModel):
     emotion: str
     timestamp: str
     voice_config: Optional[Dict[str, Any]] = None
+    audio_url: Optional[str] = None  # 添加音频URL字段
+    audio_base64: Optional[str] = None  # 添加音频Base64字段
 
 
 class VoiceChatRequest(BaseModel):
@@ -156,8 +159,9 @@ async def text_chat(request: ChatRequest):
     try:
         print(f"📝 收到聊天请求: {request.user_id} -> {request.character_id}: {request.message[:50]}...")
         print(f"🎯 使用Agent: {request.use_agent}, 角色: {request.role}, 线程ID: {request.thread_id}")
+        print(f"🎵 接收到音色配置: {request.voice_config}")  # 添加调试日志
         
-        # 直接使用角色管理器生成回复（绕过LangGraph）
+        # 使用简化的记忆系统 - 直接调用角色管理器但添加记忆功能
         from agents.character_agent import CharacterManager
         from datetime import datetime
         
@@ -167,10 +171,94 @@ async def text_chat(request: ChatRequest):
         if not agent:
             raise HTTPException(status_code=404, detail=f"角色 {request.character_id} 不存在")
         
+        print(f"🧠 启用记忆系统 - 用户ID: {request.user_id}, 角色: {request.character_id}")
+        
+        # 从记忆系统获取历史对话
+        conversation_history = conversation_graph.get_conversation_history(request.user_id, request.character_id)
+        print(f"📚 加载历史对话: {len(conversation_history)} 条记录")
+        
+        # 如果有历史记录，更新agent的对话历史
+        if conversation_history:
+            agent.conversation_history = []
+            for conv in conversation_history[-10:]:  # 最近10条
+                agent.conversation_history.append({
+                    "timestamp": conv.get("timestamp", ""),
+                    "user_message": conv.get("user_message", ""),
+                    "assistant_response": conv.get("assistant_response", ""),
+                    "user_context": conv.get("context", {}),
+                    "chat_analysis": {}
+                })
+        
+        # 构建用户上下文
+        user_context = {
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "user_id": request.user_id,
+            "thread_id": request.thread_id or f"{request.user_id}_{request.character_id}"
+        }
+        
         # 生成回复
-        response_data = agent.generate_response(request.message)
+        response_data = agent.generate_response(request.message, user_context)
+        
+        # 保存对话到记忆系统
+        conversation_data = {
+            "user_message": request.message,
+            "assistant_response": response_data.get("response", ""),
+            "character_id": request.character_id,
+            "intent": response_data.get("intent", "general"),
+            "emotion": response_data.get("emotion", "neutral"),
+            "timestamp": datetime.now().isoformat(),
+            "context": request.context or {}
+        }
+        
+        conversation_graph.memory.store_conversation(
+            user_id=request.user_id,
+            character_id=request.character_id,
+            conversation=conversation_data
+        )
+        print(f"💾 对话已保存到记忆系统")
+        
+        # 如果前端传递了voice_config，优先使用前端的配置
+        if request.voice_config:
+            print(f"🎵 使用前端传递的音色配置: {request.voice_config}")
+            response_data["voice_config"] = request.voice_config
+        else:
+            print(f"🎵 使用默认角色音色配置: {response_data.get('voice_config')}")
         
         print(f"✅ 生成回复: {response_data['character_name']} -> {response_data['response'][:50]}...")
+        
+        # 生成语音音频
+        final_voice_config = response_data.get("voice_config", {})
+        character_voice = final_voice_config.get("voice", "Cherry")
+        voice_speed = final_voice_config.get("speed", 1.0)
+        
+        print(f"🎵 开始生成语音: voice={character_voice}, speed={voice_speed}")
+        
+        try:
+            # 调用TTS服务
+            from services.audio_service import AudioService
+            audio_service = AudioService()
+            
+            tts_audio = await audio_service.text_to_speech(
+                text=response_data["response"],
+                voice=character_voice,
+                speed=voice_speed
+            )
+            
+            if tts_audio:
+                # 保存音频文件（简化处理）
+                import base64
+                audio_base64 = base64.b64encode(tts_audio).decode('utf-8')
+                audio_url = f"/audio/{request.user_id}_{request.character_id}_{datetime.now().timestamp()}.wav"
+                print(f"✅ TTS生成成功: {len(tts_audio)} 字节, URL: {audio_url}")
+            else:
+                audio_base64 = None
+                audio_url = None
+                print("⚠️ TTS生成失败")
+                
+        except Exception as e:
+            print(f"❌ TTS处理失败: {e}")
+            audio_base64 = None
+            audio_url = None
         
         return ChatResponse(
             character_id=response_data["character_id"],
@@ -178,7 +266,9 @@ async def text_chat(request: ChatRequest):
             response=response_data["response"],
             emotion=response_data["emotion"],
             timestamp=response_data["timestamp"],
-            voice_config=response_data.get("voice_config")
+            voice_config=response_data.get("voice_config"),
+            audio_url=audio_url,  # 添加音频URL
+            audio_base64=audio_base64  # 添加音频Base64
         )
         
     except Exception as e:
@@ -231,11 +321,19 @@ async def voice_chat(
             character_id=character_id
         )
         
-        # 语音合成
+        # 语音合成 - 使用角色专属音色
         voice_config = result.get("voice_config", {})
+        # 确保使用角色配置的音色，而不是默认值
+        character_voice = voice_config.get("voice")
+        if not character_voice:
+            print(f"⚠️ 未找到角色{character_id}的音色配置，使用默认音色Cherry")
+            character_voice = "Cherry"  # 仅作为备用
+            
+        print(f"🎵 使用音色: {character_voice} 为角色 {character_id}")
+        
         tts_audio = await audio_service.text_to_speech(
             text=result["response"],
-            voice=voice_config.get("voice", "Cherry"),
+            voice=character_voice,
             speed=voice_config.get("speed", 1.0)
         )
         

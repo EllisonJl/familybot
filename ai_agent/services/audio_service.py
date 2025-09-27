@@ -7,6 +7,7 @@ import os
 import base64
 import io
 import tempfile
+import requests
 from typing import Optional, Dict, Any, Union, AsyncGenerator
 import numpy as np
 import soundfile as sf
@@ -179,7 +180,7 @@ class AudioService:
     async def text_to_speech(
         self, 
         text: str, 
-        voice: str = "Cherry",
+        voice: str,  # 移除默认值，强制传入音色参数
         speed: float = 1.0,
         stream: bool = False
     ) -> Union[bytes, AsyncGenerator[bytes, None]]:
@@ -211,25 +212,72 @@ class AudioService:
         voice: str, 
         speed: float
     ) -> bytes:
-        """批量TTS处理"""
+        """批量TTS处理 - 使用qwen3-tts-flash-realtime模型"""
         try:
-            response = dashscope.MultiModalConversation.call(
-                api_key=self.api_key,
+            # 使用正确的SpeechSynthesizer API
+            from dashscope.audio.qwen_tts import SpeechSynthesizer
+            
+            response = SpeechSynthesizer.call(
                 model=Config.TTS_MODEL,
+                api_key=self.api_key,
                 text=text,
                 voice=voice,
                 language_type="Chinese",
                 stream=False
             )
             
-            if hasattr(response, 'output') and hasattr(response.output, 'audio'):
-                audio_data = response.output.audio.data
-                return base64.b64decode(audio_data)
-            else:
-                raise Exception("TTS响应中没有音频数据")
+            print(f"🎵 TTS调用参数: model={Config.TTS_MODEL}, voice={voice}, text={text[:20]}...")
+            
+            # 详细调试响应结构
+            print(f"🔍 TTS响应结构: {type(response)}")
+            print(f"🔍 response属性: {dir(response)}")
+            
+            if hasattr(response, 'output'):
+                print(f"🔍 output类型: {type(response.output)}")
+                print(f"🔍 output属性: {dir(response.output)}")
+                
+                if hasattr(response.output, 'audio'):
+                    print(f"🔍 audio类型: {type(response.output.audio)}")
+                    print(f"🔍 audio内容: {response.output.audio}")
+                    
+                    # 尝试不同的访问方式
+                    if isinstance(response.output.audio, dict):
+                        if 'url' in response.output.audio:
+                            audio_url = response.output.audio['url']
+                            print(f"✅ 使用字典方式获得URL: {audio_url}")
+                            
+                            # 下载音频数据
+                            audio_response = requests.get(audio_url)
+                            audio_response.raise_for_status()
+                            
+                            audio_data = audio_response.content
+                            print(f"✅ 音频下载成功: {len(audio_data)}字节")
+                            return audio_data
+                            
+                        elif 'data' in response.output.audio:
+                            # 直接返回Base64数据
+                            audio_data = base64.b64decode(response.output.audio['data'])
+                            print(f"✅ 使用Base64数据: {len(audio_data)}字节")
+                            return audio_data
+                    
+                    elif hasattr(response.output.audio, 'url'):
+                        audio_url = response.output.audio.url
+                        print(f"✅ 使用属性方式获得URL: {audio_url}")
+                        
+                        # 下载音频数据
+                        audio_response = requests.get(audio_url)
+                        audio_response.raise_for_status()
+                        
+                        audio_data = audio_response.content
+                        print(f"✅ 音频下载成功: {len(audio_data)}字节")
+                        return audio_data
+            
+            raise Exception(f"TTS响应格式错误: 无法解析音频数据 - 响应: {response}")
                 
         except Exception as e:
-            print(f"❌ 批量TTS处理失败: {e}")
+            print(f"❌ TTS处理失败: {e}")
+            print(f"❌ 错误类型: {type(e)}")
+            print(f"❌ 错误详情: {str(e)}")
             raise
     
     async def _text_to_speech_stream(
@@ -238,11 +286,14 @@ class AudioService:
         voice: str, 
         speed: float
     ) -> AsyncGenerator[bytes, None]:
-        """流式TTS处理"""
+        """流式TTS处理 - 使用qwen3-tts-flash-realtime模型"""
         try:
-            response = dashscope.MultiModalConversation.call(
-                api_key=self.api_key,
+            # 流式模式使用SpeechSynthesizer
+            from dashscope.audio.qwen_tts import SpeechSynthesizer
+            
+            response = SpeechSynthesizer.call(
                 model=Config.TTS_MODEL,
+                api_key=self.api_key,
                 text=text,
                 voice=voice,
                 language_type="Chinese",
@@ -254,8 +305,16 @@ class AudioService:
                     hasattr(chunk.output, 'audio') and 
                     chunk.output.audio is not None):
                     
-                    audio_data = base64.b64decode(chunk.output.audio.data)
-                    yield audio_data
+                    if hasattr(chunk.output.audio, 'data'):
+                        # 流式数据直接返回
+                        audio_data = base64.b64decode(chunk.output.audio.data)
+                        yield audio_data
+                    elif hasattr(chunk.output.audio, 'url'):
+                        # 如果流式返回URL，下载并返回
+                        audio_url = chunk.output.audio.url
+                        audio_response = requests.get(audio_url)
+                        audio_response.raise_for_status()
+                        yield audio_response.content
                     
                 if (hasattr(chunk, 'output') and 
                     hasattr(chunk.output, 'finish_reason') and 
