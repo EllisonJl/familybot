@@ -103,3 +103,7 @@ ai_agent/data/*.db
 *.m4a
 *.avi
 *.mov
+
+# 用户上传的文件（不应该提交到版本控制）
+ai_agent/data/uploaded_files/
+ai_agent/data/document_storage.db

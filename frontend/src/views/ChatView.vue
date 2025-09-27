@@ -107,6 +107,16 @@
             </div>
           </el-tooltip>
           
+          <!-- 文件上传按钮 -->
+          <el-tooltip content="上传文档到当前角色知识库" placement="top">
+            <div 
+              class="file-upload-toggle" 
+              @click="showFileUpload = true"
+            >
+              <el-icon><Document /></el-icon>
+            </div>
+          </el-tooltip>
+          
           <!-- 发送按钮 -->
           <el-button
             type="primary"
@@ -127,13 +137,96 @@
       :current-character="chatStore.selectedCharacter"
       @select="handleCharacterSelect"
     />
+    
+    <!-- 文件上传对话框 -->
+    <el-dialog
+      v-model="showFileUpload"
+      title="上传文档到角色知识库"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <div class="file-upload-dialog">
+        <div class="current-character-info">
+          <el-avatar :src="chatStore.selectedCharacter?.avatarUrl" :size="40" />
+          <span>为 {{ chatStore.selectedCharacter?.name }} 上传文档</span>
+        </div>
+        
+        <el-upload
+          ref="uploadRef"
+          :action="`http://localhost:8001/upload-document`"
+          :data="{ 
+            character_id: chatStore.selectedCharacter?.characterId || chatStore.selectedCharacter?.id,
+            user_id: chatStore.currentUser.id 
+          }"
+          :on-success="handleUploadSuccess"
+          :on-error="handleUploadError"
+          :before-upload="beforeUpload"
+          :show-file-list="true"
+          :auto-upload="false"
+          accept=".pdf,.doc,.docx,.txt,.md"
+          drag
+        >
+          <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+          <div class="el-upload__text">
+            将文件拖到此处，或<em>点击上传</em>
+          </div>
+          <template #tip>
+            <div class="el-upload__tip">
+              支持 PDF、Word、TXT、Markdown 格式文件，大小不超过 10MB
+            </div>
+          </template>
+        </el-upload>
+        
+        <div class="upload-actions">
+          <el-button @click="showFileUpload = false">取消</el-button>
+          <el-button type="primary" @click="submitUpload" :loading="uploadLoading">
+            开始上传
+          </el-button>
+        </div>
+        
+        <!-- 角色文档列表 -->
+        <div class="character-documents" v-if="characterDocuments.length > 0">
+          <h4>{{ chatStore.selectedCharacter?.name }} 的文档库</h4>
+          <div class="document-list">
+            <div 
+              v-for="doc in characterDocuments" 
+              :key="doc.file_id"
+              class="document-item"
+            >
+              <div class="document-info">
+                <el-icon class="document-icon">
+                  <Document v-if="doc.file_type === '.pdf'" />
+                  <DocumentCopy v-else />
+                </el-icon>
+                <div class="document-details">
+                  <div class="document-name">{{ doc.filename }}</div>
+                  <div class="document-meta">
+                    {{ formatFileSize(doc.file_size) }} • 
+                    {{ formatDate(doc.upload_time) }}
+                    <span v-if="doc.page_count > 0">• {{ doc.page_count }} 页</span>
+                  </div>
+                  <div class="document-summary" v-if="doc.summary">{{ doc.summary }}</div>
+                </div>
+              </div>
+              <el-button 
+                type="danger" 
+                size="small" 
+                :icon="Delete"
+                @click="deleteDocument(doc.file_id)"
+                circle
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, nextTick, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   Avatar, 
   UserFilled, 
@@ -141,7 +234,11 @@ import {
   Microphone, 
   VideoPause, 
   Promotion,
-  VideoPlay
+  VideoPlay,
+  Document,
+  UploadFilled,
+  DocumentCopy,
+  Delete
 } from '@element-plus/icons-vue'
 
 import { useChatStore } from '@/stores/chat'
@@ -155,6 +252,7 @@ const chatStore = useChatStore()
 // 响应式数据
 const currentMessage = ref('')
 const showCharacterSelector = ref(false)
+const showFileUpload = ref(false)
 const messageListRef = ref(null)
 const isListening = ref(false)
 const recognition = ref(null)
@@ -164,6 +262,9 @@ const isSpeaking = ref(false)
 const voiceRetryCount = ref(0)
 const maxRetries = 3
 const sidebarCollapsed = ref(false)
+const uploadRef = ref(null)
+const uploadLoading = ref(false)
+const characterDocuments = ref([])
 
 // 方法
 const handleSend = async (inputText = null) => {
@@ -788,6 +889,106 @@ const scrollToBottom = () => {
   })
 }
 
+// 文件上传相关方法
+const beforeUpload = (file) => {
+  const isValidType = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/markdown'].includes(file.type)
+  const isLt10M = file.size / 1024 / 1024 < 10
+
+  if (!isValidType) {
+    ElMessage.error('只支持 PDF、Word、TXT、Markdown 格式文件!')
+    return false
+  }
+  if (!isLt10M) {
+    ElMessage.error('文件大小不能超过 10MB!')
+    return false
+  }
+  return true
+}
+
+const submitUpload = () => {
+  if (!uploadRef.value) return
+  
+  uploadLoading.value = true
+  uploadRef.value.submit()
+}
+
+const handleUploadSuccess = (response, file) => {
+  uploadLoading.value = false
+  ElMessage.success(`文档 ${file.name} 上传成功！`)
+  loadCharacterDocuments() // 重新加载文档列表
+  uploadRef.value.clearFiles() // 清空文件列表
+}
+
+const handleUploadError = (error, file) => {
+  uploadLoading.value = false
+  console.error('文件上传失败:', error)
+  ElMessage.error(`文档 ${file.name} 上传失败: ${error.message || '未知错误'}`)
+}
+
+const loadCharacterDocuments = async () => {
+  if (!chatStore.selectedCharacter) return
+  
+  try {
+    const characterId = chatStore.selectedCharacter.characterId || chatStore.selectedCharacter.id
+    const response = await fetch(`http://localhost:8001/documents/${characterId}`)
+    
+    if (response.ok) {
+      const data = await response.json()
+      characterDocuments.value = data.files
+      console.log('角色文档加载成功:', data.files.length, '个文档')
+    } else {
+      console.error('加载角色文档失败:', response.statusText)
+    }
+  } catch (error) {
+    console.error('加载角色文档失败:', error)
+  }
+}
+
+const deleteDocument = async (fileId) => {
+  try {
+    await ElMessageBox.confirm('确定要删除这个文档吗？删除后无法恢复。', '确认删除', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    
+    const characterId = chatStore.selectedCharacter.characterId || chatStore.selectedCharacter.id
+    const response = await fetch(`http://localhost:8001/documents/${characterId}/${fileId}`, {
+      method: 'DELETE'
+    })
+    
+    if (response.ok) {
+      ElMessage.success('文档删除成功')
+      loadCharacterDocuments() // 重新加载文档列表
+    } else {
+      ElMessage.error('文档删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除文档失败:', error)
+      ElMessage.error('文档删除失败')
+    }
+  }
+}
+
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+const formatDate = (dateString) => {
+  return new Date(dateString).toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
 // 生命周期
 onMounted(async () => {
   try {
@@ -841,6 +1042,10 @@ watch(() => chatStore.selectedCharacter, (newCharacter) => {
   if (!newCharacter) {
     stopSpeechRecognition()
     voiceEnabled.value = false
+    characterDocuments.value = []
+  } else {
+    // 加载新角色的文档
+    loadCharacterDocuments()
   }
   // 不自动启动语音识别，让用户手动控制
 })
@@ -1112,6 +1317,130 @@ watch(() => chatStore.selectedCharacter, (newCharacter) => {
   height: 40px;
 }
 
+/* 文件上传按钮样式 */
+.file-upload-toggle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f0;
+  border: 2px solid #e0e0e0;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.file-upload-toggle:hover {
+  background: #e8e8e8;
+  transform: scale(1.1);
+  border-color: #409eff;
+  color: #409eff;
+}
+
+/* 文件上传对话框样式 */
+.file-upload-dialog {
+  padding: 20px 0;
+}
+
+.current-character-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.upload-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #ebeef5;
+}
+
+/* 文档列表样式 */
+.character-documents {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #ebeef5;
+}
+
+.character-documents h4 {
+  margin: 0 0 16px 0;
+  color: #606266;
+  font-size: 16px;
+}
+
+.document-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.document-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: white;
+  transition: all 0.3s ease;
+}
+
+.document-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-color: #409eff;
+}
+
+.document-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.document-icon {
+  font-size: 24px;
+  color: #409eff;
+}
+
+.document-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.document-name {
+  font-weight: 500;
+  color: #303133;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.document-meta {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 2px;
+}
+
+.document-summary {
+  font-size: 12px;
+  color: #606266;
+  margin-top: 4px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .chat-header {
@@ -1140,6 +1469,18 @@ watch(() => chatStore.selectedCharacter, (newCharacter) => {
   
   .welcome-message {
     padding: 40px 16px;
+  }
+  
+  .file-upload-dialog {
+    padding: 16px 0;
+  }
+  
+  .document-item {
+    padding: 8px;
+  }
+  
+  .document-name {
+    font-size: 14px;
   }
 }
 </style>

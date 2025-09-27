@@ -1,6 +1,7 @@
 """
 Graph RAG 知识增强系统
 基于图结构的知识检索和增强生成
+集成文档搜索功能
 """
 
 import json
@@ -14,6 +15,7 @@ from openai import OpenAI
 
 from config import Config
 from models.state import GraphRAGResult
+from rag.document_processor import document_processor
 
 
 @dataclass
@@ -277,12 +279,19 @@ class GraphRAGSystem:
             
             conn.commit()
     
-    async def query_knowledge(self, query: str, domain: Optional[str] = None, limit: int = 5) -> dict:
+    async def query_knowledge(
+        self, 
+        query: str, 
+        character_id: Optional[str] = None,
+        domain: Optional[str] = None, 
+        limit: int = 5
+    ) -> dict:
         """
-        查询知识图谱
+        查询知识图谱和角色文档
         
         Args:
             query: 查询文本
+            character_id: 角色ID，用于搜索角色专属文档
             domain: 知识域限制
             limit: 返回结果数量限制
             
@@ -291,43 +300,78 @@ class GraphRAGSystem:
         """
         try:
             print(f"🔍 Graph RAG 查询: {query[:50]}...")
+            if character_id:
+                print(f"🎭 角色: {character_id}")
             
             # 1. 查询扩展 - 生成相关关键词
             expanded_query = await self._expand_query(query)
             
-            # 2. 检索相关节点
-            relevant_nodes = self._search_nodes(expanded_query, domain, limit * 2)
+            # 2. 检索相关节点（基础知识图谱）
+            relevant_nodes = self._search_nodes(expanded_query, domain, limit)
             
-            # 3. 图遍历 - 查找相关联的节点
-            connected_nodes = self._find_connected_nodes(relevant_nodes, limit)
+            # 3. 搜索角色文档（如果提供了角色ID）
+            document_results = []
+            if character_id:
+                document_results = await document_processor.search_in_character_documents(
+                    character_id, query, limit
+                )
+                print(f"📄 在角色文档中找到 {len(document_results)} 个相关片段")
             
-            # 4. 结果排序和过滤
+            # 4. 图遍历 - 查找相关联的节点
+            connected_nodes = self._find_connected_nodes(relevant_nodes, limit // 2)
+            
+            # 5. 结果排序和过滤
             final_results = self._rank_and_filter_results(
-                relevant_nodes + connected_nodes, query, limit
+                relevant_nodes + connected_nodes, query, limit // 2
             )
             
-            # 5. 构建结果
+            # 6. 构建结果
             contexts = []
             sources = []
             
+            # 添加知识图谱结果
             for node, score in final_results:
                 contexts.append({
                     "content": node.content,
                     "domain": node.domain,
                     "type": node.node_type,
                     "relevance_score": score,
-                    "metadata": node.metadata
+                    "metadata": node.metadata,
+                    "source": "knowledge_graph"
                 })
                 sources.append(f"{node.domain}_{node.node_type}")
+            
+            # 添加文档搜索结果
+            for doc_result in document_results:
+                contexts.append({
+                    "content": doc_result["content"],
+                    "domain": "document",
+                    "type": "document_chunk",
+                    "relevance_score": doc_result["relevance_score"],
+                    "metadata": {
+                        "filename": doc_result["filename"],
+                        "page_number": doc_result["page_number"],
+                        "file_id": doc_result["file_id"]
+                    },
+                    "source": "character_document"
+                })
+                sources.append(f"document_{doc_result['filename']}")
+            
+            # 按相关性排序
+            contexts.sort(key=lambda x: x["relevance_score"], reverse=True)
+            contexts = contexts[:limit]  # 限制最终结果数量
             
             result = GraphRAGResult(
                 relevant_contexts=contexts,
                 knowledge_sources=list(set(sources)),
-                confidence=max([score for _, score in final_results]) if final_results else 0.0,
+                confidence=max([ctx["relevance_score"] for ctx in contexts]) if contexts else 0.0,
                 query_expansion=expanded_query
             )
             
             print(f"✅ Graph RAG 检索完成，找到 {len(contexts)} 个相关上下文")
+            print(f"   - 知识图谱: {len([c for c in contexts if c['source'] == 'knowledge_graph'])} 个")
+            print(f"   - 角色文档: {len([c for c in contexts if c['source'] == 'character_document'])} 个")
+            
             return result
             
         except Exception as e:
@@ -545,6 +589,92 @@ class GraphRAGSystem:
             return True
         except Exception as e:
             print(f"❌ 添加知识边失败: {e}")
+            return False
+    
+    async def add_document_knowledge(
+        self, 
+        character_id: str, 
+        file_content: bytes, 
+        filename: str, 
+        user_id: str
+    ) -> Tuple[bool, str]:
+        """
+        添加文档知识到角色知识库
+        
+        Args:
+            character_id: 角色ID
+            file_content: 文件内容
+            filename: 文件名
+            user_id: 用户ID
+            
+        Returns:
+            (成功标志, 消息)
+        """
+        try:
+            print(f"📚 为角色 {character_id} 添加文档知识: {filename}")
+            
+            success, message, metadata = await document_processor.upload_file(
+                file_content, filename, character_id, user_id
+            )
+            
+            if success:
+                print(f"✅ 文档知识添加成功: {filename}")
+                return True, f"文档 {filename} 上传成功，已添加到 {character_id} 的知识库"
+            else:
+                print(f"❌ 文档知识添加失败: {message}")
+                return False, message
+                
+        except Exception as e:
+            print(f"❌ 添加文档知识失败: {e}")
+            return False, f"文档处理失败: {str(e)}"
+    
+    def get_character_documents(self, character_id: str) -> List[Dict[str, Any]]:
+        """
+        获取角色的所有文档
+        
+        Args:
+            character_id: 角色ID
+            
+        Returns:
+            文档列表
+        """
+        try:
+            files = document_processor.get_character_files(character_id)
+            
+            return [
+                {
+                    "file_id": file.file_id,
+                    "filename": file.filename,
+                    "file_type": file.file_type,
+                    "file_size": file.file_size,
+                    "upload_time": file.upload_time,
+                    "page_count": file.page_count,
+                    "word_count": file.word_count,
+                    "summary": file.summary,
+                    "keywords": file.keywords
+                }
+                for file in files
+            ]
+            
+        except Exception as e:
+            print(f"❌ 获取角色文档失败: {e}")
+            return []
+    
+    def delete_character_document(self, character_id: str, file_id: str) -> bool:
+        """
+        删除角色文档
+        
+        Args:
+            character_id: 角色ID
+            file_id: 文件ID
+            
+        Returns:
+            删除是否成功
+        """
+        try:
+            return document_processor.delete_character_file(character_id, file_id)
+        except Exception as e:
+            print(f"❌ 删除角色文档失败: {e}")
             return False
 
 

@@ -48,6 +48,20 @@ class CharacterAgent:
         """
         base_prompt = self.config["system_prompt"]
         
+        # 如果有RAG搜索结果，添加相关文档信息
+        if user_context and "rag_result" in user_context:
+            rag_result = user_context["rag_result"]
+            if hasattr(rag_result, 'relevant_contexts') and rag_result.relevant_contexts:
+                document_info = "\n\n【重要参考信息】\n"
+                document_info += "基于用户上传的文档，以下是相关内容，请优先使用这些信息回答用户问题：\n\n"
+                
+                for i, ctx in enumerate(rag_result.relevant_contexts):
+                    source_type = "上传文档" if ctx["source"] == "character_document" else "知识库"
+                    document_info += f"{i+1}. 【{source_type}】{ctx['content'][:200]}...\n\n"
+                
+                document_info += "请根据以上信息准确回答用户问题，不要编造或臆测。如果上述信息中没有相关内容，可以说明没有找到相关信息。\n"
+                base_prompt += document_info
+        
         # 添加上下文信息
         if user_context:
             context_info = "\n\n当前上下文信息：\n"

@@ -3,9 +3,9 @@ FamilyBot AI Agent 主服务
 提供FastAPI接口，集成所有AI功能模块
 """
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Form
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import uvicorn
 from typing import Optional, Dict, Any, List
 import asyncio
@@ -15,6 +15,7 @@ from datetime import datetime
 from config import Config
 from graph.conversation_graph import ConversationGraph
 from services.audio_service import audio_service
+from rag.graph_rag import graph_rag
 
 
 # === 数据模型 ===
@@ -47,6 +48,20 @@ class VoiceChatRequest(BaseModel):
     user_id: str = "default"
     character_id: str = "xiyang"
     context: Optional[Dict[str, Any]] = None
+
+
+class FileUploadResponse(BaseModel):
+    """文件上传响应模型"""
+    success: bool = Field(description="上传是否成功")
+    message: str = Field(description="响应消息")
+    file_id: Optional[str] = Field(default=None, description="文件ID")
+    filename: Optional[str] = Field(default=None, description="文件名")
+
+
+class DocumentListResponse(BaseModel):
+    """文档列表响应模型"""
+    files: List[Dict[str, Any]] = Field(description="文档列表")
+    total: int = Field(description="文档总数")
 
 
 class VoiceChatResponse(BaseModel):
@@ -189,11 +204,22 @@ async def text_chat(request: ChatRequest):
                     "chat_analysis": {}
                 })
         
+        # 使用GraphRAG搜索相关知识（包括角色文档）
+        print(f"🔍 使用GraphRAG搜索相关知识...")
+        rag_result = await graph_rag.query_knowledge(
+            query=request.message,
+            character_id=request.character_id
+        )
+        print(f"📚 GraphRAG搜索结果: {len(rag_result.relevant_contexts)} 个相关上下文")
+        for ctx in rag_result.relevant_contexts:
+            print(f"   - {ctx['source']}: {ctx['content'][:50]}...")
+        
         # 构建用户上下文
         user_context = {
             "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "user_id": request.user_id,
-            "thread_id": request.thread_id or f"{request.user_id}_{request.character_id}"
+            "thread_id": request.thread_id or f"{request.user_id}_{request.character_id}",
+            "rag_result": rag_result  # 添加GraphRAG搜索结果
         }
         
         # 生成回复
@@ -440,6 +466,100 @@ async def get_user_stats(user_id: str):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取统计信息失败: {str(e)}")
+
+
+# === 文件上传接口 ===
+@app.post("/upload-document", response_model=FileUploadResponse)
+async def upload_document(
+    character_id: str = Form(..., description="角色ID"),
+    user_id: str = Form(..., description="用户ID"),
+    file: UploadFile = File(..., description="上传的文件")
+):
+    """
+    上传文档到角色知识库
+    """
+    try:
+        print(f"📤 接收文档上传请求: {file.filename} -> 角色: {character_id}")
+        
+        # 检查文件大小（限制为10MB）
+        if file.size and file.size > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="文件大小不能超过10MB")
+        
+        # 读取文件内容
+        file_content = await file.read()
+        
+        if not file_content:
+            raise HTTPException(status_code=400, detail="文件内容为空")
+        
+        # 调用GraphRAG系统处理文档
+        success, message = await graph_rag.add_document_knowledge(
+            character_id=character_id,
+            file_content=file_content,
+            filename=file.filename,
+            user_id=user_id
+        )
+        
+        if success:
+            print(f"✅ 文档上传成功: {file.filename}")
+            return FileUploadResponse(
+                success=True,
+                message=message,
+                filename=file.filename
+            )
+        else:
+            print(f"❌ 文档上传失败: {message}")
+            raise HTTPException(status_code=400, detail=message)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ 文档上传处理失败: {e}")
+        raise HTTPException(status_code=500, detail=f"文档上传失败: {str(e)}")
+
+
+@app.get("/documents/{character_id}", response_model=DocumentListResponse)
+async def get_character_documents(character_id: str):
+    """
+    获取角色的所有文档
+    """
+    try:
+        print(f"📄 获取角色文档: {character_id}")
+        
+        documents = graph_rag.get_character_documents(character_id)
+        
+        return DocumentListResponse(
+            files=documents,
+            total=len(documents)
+        )
+        
+    except Exception as e:
+        print(f"❌ 获取角色文档失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取文档列表失败: {str(e)}")
+
+
+@app.delete("/documents/{character_id}/{file_id}")
+async def delete_character_document(character_id: str, file_id: str):
+    """
+    删除角色文档
+    """
+    try:
+        print(f"🗑️ 删除角色文档: {character_id}/{file_id}")
+        
+        success = graph_rag.delete_character_document(character_id, file_id)
+        
+        if success:
+            return {
+                "success": True, 
+                "message": "文档删除成功"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="文档不存在或删除失败")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ 删除角色文档失败: {e}")
+        raise HTTPException(status_code=500, detail=f"删除文档失败: {str(e)}")
 
 
 # === 测试接口 ===
