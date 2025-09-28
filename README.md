@@ -5,6 +5,8 @@
   <p>通过AI角色扮演技术，为老年人提供温暖的虚拟家庭成员对话体验</p>
 </div>
 
+## ✨ Demo：https://www.bilibili.com/video/BV1UWnZzyE58/?vd_source=e5f9ab14d2f2ddcba013e9c20fcb5a9f
+
 ## 🌟 系统特色
 
 ### 🎭 三个可爱的虚拟家庭成员
