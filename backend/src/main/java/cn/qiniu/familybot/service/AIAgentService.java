@@ -197,6 +197,12 @@ public class AIAgentService {
         private String cotAnalysis;
         private String audioUrl;
         private String audioBase64;
+        
+        // 图片生成相关字段
+        private String imageUrl;
+        private String imageBase64;
+        private String imageDescription;
+        private String enhancedPrompt;
 
         // Getters and Setters
         public String getCharacterId() { return characterId; }
@@ -237,5 +243,18 @@ public class AIAgentService {
 
         public String getAudioBase64() { return audioBase64; }
         public void setAudioBase64(String audioBase64) { this.audioBase64 = audioBase64; }
+        
+        // 图片相关字段的 Getters and Setters
+        public String getImageUrl() { return imageUrl; }
+        public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
+        
+        public String getImageBase64() { return imageBase64; }
+        public void setImageBase64(String imageBase64) { this.imageBase64 = imageBase64; }
+        
+        public String getImageDescription() { return imageDescription; }
+        public void setImageDescription(String imageDescription) { this.imageDescription = imageDescription; }
+        
+        public String getEnhancedPrompt() { return enhancedPrompt; }
+        public void setEnhancedPrompt(String enhancedPrompt) { this.enhancedPrompt = enhancedPrompt; }
     }
 }

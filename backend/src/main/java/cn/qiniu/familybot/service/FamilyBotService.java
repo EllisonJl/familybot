@@ -172,6 +172,12 @@ public class FamilyBotService {
                 // 设置路由和语音配置
                 response.setRouterInfo(aiResponse.getRouterInfo());
                 response.setVoiceConfig(aiResponse.getVoiceConfig());
+                
+                // 设置图片生成相关字段
+                response.setImageUrl(aiResponse.getImageUrl());
+                response.setImageBase64(aiResponse.getImageBase64());
+                response.setImageDescription(aiResponse.getImageDescription());
+                response.setEnhancedPrompt(aiResponse.getEnhancedPrompt());
 
                 // 保存对话历史
                 Conversation conversation = new Conversation();

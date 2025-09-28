@@ -128,6 +128,17 @@
             </div>
           </el-tooltip>
           
+          <!-- 图片生成按钮 -->
+          <el-tooltip content="生成图片" placement="top">
+            <div 
+              class="image-generate-toggle" 
+              :class="{ 'generating': isGeneratingImage }"
+              @click="showImageGenerator = true"
+            >
+              <el-icon><Picture /></el-icon>
+            </div>
+          </el-tooltip>
+          
           <!-- 发送按钮 -->
           <el-button
             type="primary"
@@ -231,6 +242,69 @@
         </div>
       </div>
     </el-dialog>
+    
+    <!-- 图片生成对话框 -->
+    <el-dialog
+      v-model="showImageGenerator"
+      title="AI图片生成"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <div class="image-generator-dialog">
+        <div class="current-character-info">
+          <el-avatar :src="chatStore.selectedCharacter?.avatarUrl" :size="40" />
+          <span>{{ chatStore.selectedCharacter?.name }} 将为您绘制图片</span>
+        </div>
+        
+        <div class="character-style-info">
+          <el-tag v-if="chatStore.selectedCharacter?.id === 'xiyang'" type="info" size="small">
+            成熟稳重风格 · 商务简约 · 蓝灰色系
+          </el-tag>
+          <el-tag v-else-if="chatStore.selectedCharacter?.id === 'meiyang'" type="warning" size="small">
+            温馨甜美风格 · 日系清新 · 粉暖色系
+          </el-tag>
+          <el-tag v-else-if="chatStore.selectedCharacter?.id === 'lanyang'" type="success" size="small">
+            童趣可爱风格 · 卡通活泼 · 彩虹色系
+          </el-tag>
+        </div>
+        
+        <el-form :model="imageForm" label-width="80px" class="image-form">
+          <el-form-item label="图片描述" required>
+            <el-input
+              v-model="imageForm.description"
+              type="textarea"
+              :rows="4"
+              placeholder="请描述您想要生成的图片内容，例如：一个美丽的花园、温馨的家庭聚餐、可爱的小动物等..."
+              maxlength="200"
+              show-word-limit
+            />
+          </el-form-item>
+          
+          <el-form-item label="风格偏好">
+            <el-select v-model="imageForm.stylePreference" placeholder="选择风格偏好（可选）" clearable>
+              <el-option label="水彩风格" value="watercolor style" />
+              <el-option label="油画风格" value="oil painting style" />
+              <el-option label="素描风格" value="sketch style" />
+              <el-option label="动漫风格" value="anime style" />
+              <el-option label="写实风格" value="realistic style" />
+              <el-option label="抽象风格" value="abstract style" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        
+        <div class="dialog-footer">
+          <el-button @click="showImageGenerator = false">取消</el-button>
+          <el-button 
+            type="primary" 
+            @click="generateImage"
+            :loading="isGeneratingImage"
+            :disabled="!imageForm.description.trim()"
+          >
+            {{ isGeneratingImage ? '生成中...' : '开始生成' }}
+          </el-button>
+        </div>
+      </div>
+    </el-dialog>
     </div>
   </div>
 </template>
@@ -250,7 +324,8 @@ import {
   UploadFilled,
   DocumentCopy,
   Delete,
-  Search
+  Search,
+  Picture
 } from '@element-plus/icons-vue'
 
 import { useChatStore } from '@/stores/chat'
@@ -268,6 +343,7 @@ const showFileUpload = ref(false)
 const messageListRef = ref(null)
 const isListening = ref(false)
 const recognition = ref(null)
+const voiceRecognitionPaused = ref(false) // 添加暂停状态
 const voiceEnabled = ref(false)
 const ttsEnabled = ref(true)
 const isSpeaking = ref(false)
@@ -280,6 +356,14 @@ const characterDocuments = ref([])
 // 联网搜索相关
 const webSearchEnabled = ref(false)
 const isSearching = ref(false)
+
+// 图片生成相关
+const showImageGenerator = ref(false)
+const isGeneratingImage = ref(false)
+const imageForm = ref({
+  description: '',
+  stylePreference: ''
+})
 
 // 方法
 const handleSend = async (inputText = null) => {
@@ -332,7 +416,49 @@ const handleCharacterSelect = async (character) => {
   try {
     await chatStore.selectCharacter(character)
     ElMessage.success(`已切换到${character.name}`)
-    scrollToBottom()
+    
+    // 自动获取并播放问候语
+    try {
+      console.log(`🎯 获取${character.name}的问候语...`)
+      const response = await fetch(`http://localhost:8001/characters/${character.characterId || character.id}/greeting`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ 获取问候语成功:', data)
+        
+        // 将问候语作为AI消息添加到聊天记录
+        const greetingMessage = {
+          id: Date.now(),
+          content: data.greeting,
+          type: 'ai',
+          timestamp: new Date(),
+          character: {
+            id: character.characterId || character.id,
+            name: character.name,
+            avatarUrl: character.avatarUrl
+          }
+        }
+        
+        // 添加到聊天记录
+        chatStore.addMessage(greetingMessage)
+        
+        // 如果启用了TTS并且有音频数据，直接播放TTS音频
+        if (ttsEnabled.value && data.audio_base64) {
+          setTimeout(() => {
+            console.log('🎵 播放问候语TTS音频...')
+            playAudioFromBase64(data.audio_base64)
+          }, 500)
+        }
+        
+        scrollToBottom()
+      } else {
+        console.error('获取问候语失败:', response.status)
+      }
+    } catch (greetingError) {
+      console.error('获取问候语出错:', greetingError)
+      // 问候语失败不影响角色选择
+    }
+    
   } catch (error) {
     ElMessage.error('切换角色失败')
   }
@@ -812,18 +938,21 @@ const playAudioFromBase64 = async (audioBase64) => {
     audio.onplay = () => {
       console.log('🎵 开始播放Base64音频')
       isSpeaking.value = true
+      pauseVoiceRecognition() // 暂停语音识别
     }
     audio.onended = () => {
       console.log('✅ Base64音频播放结束')
       isSpeaking.value = false
       currentAudio = null
       URL.revokeObjectURL(audioUrl) // 清理URL
+      resumeVoiceRecognition() // 恢复语音识别
     }
     audio.onerror = (e) => {
       console.error('❌ Base64音频播放失败:', e)
       isSpeaking.value = false
       currentAudio = null
       URL.revokeObjectURL(audioUrl) // 清理URL
+      resumeVoiceRecognition() // 恢复语音识别
       ElMessage.warning('AI音频播放失败，使用系统TTS')
     }
     
@@ -863,15 +992,18 @@ const playAudioFromUrl = (audioUrl) => {
     audio.onplay = () => {
       console.log('🎵 开始播放音频')
       isSpeaking.value = true
+      pauseVoiceRecognition() // 暂停语音识别
     }
     audio.onended = () => {
       console.log('✅ 音频播放结束')
       isSpeaking.value = false
+      resumeVoiceRecognition() // 恢复语音识别
     }
     audio.onerror = (e) => {
       console.error('❌ 音频播放失败:', e)
       console.error('音频URL:', audioUrl)
       isSpeaking.value = false
+      resumeVoiceRecognition() // 恢复语音识别
       // 如果音频播放失败，使用TTS作为备选
       ElMessage.warning('音频播放失败，使用系统TTS')
     }
@@ -901,6 +1033,62 @@ const toggleWebSearch = () => {
   webSearchEnabled.value = !webSearchEnabled.value
   const status = webSearchEnabled.value ? '启用' : '关闭'
   ElMessage.info(`联网搜索已${status}`)
+}
+
+// 图片生成相关方法
+const generateImage = async () => {
+  if (!imageForm.value.description.trim()) {
+    ElMessage.warning('请输入图片描述')
+    return
+  }
+  
+  if (!chatStore.selectedCharacter) {
+    ElMessage.warning('请先选择角色')
+    return
+  }
+  
+  isGeneratingImage.value = true
+  
+  try {
+    // 构造包含图片生成指令的消息
+    const imageMessage = `画${imageForm.value.description}`
+    
+    console.log('🎨 开始生成图片...', {
+      description: imageForm.value.description,
+      stylePreference: imageForm.value.stylePreference,
+      character: chatStore.selectedCharacter.name
+    })
+    
+    // 构造完整的图片生成消息（包含风格偏好）
+    const fullImageMessage = `${imageMessage}${imageForm.value.stylePreference ? ` (${imageForm.value.stylePreference})` : ''}`
+    
+    // 调用聊天API，它会自动检测图片生成请求并添加用户消息
+    const aiMessage = await chatStore.sendMessage(fullImageMessage, null, false)
+    
+    ElMessage.success('图片生成成功！')
+    console.log('✅ 图片生成完成:', aiMessage)
+    
+    // 关闭对话框并重置表单
+    showImageGenerator.value = false
+    imageForm.value.description = ''
+    imageForm.value.stylePreference = ''
+    
+    // 滚动到底部显示新消息
+    scrollToBottom()
+    
+    // 如果启用了TTS，播放AI回复
+    if (aiMessage && aiMessage.content && ttsEnabled.value) {
+      setTimeout(() => {
+        playAIAudio(aiMessage)
+      }, 500)
+    }
+    
+  } catch (error) {
+    console.error('图片生成失败:', error)
+    ElMessage.error(`图片生成失败: ${error.message || '请稍后重试'}`)
+  } finally {
+    isGeneratingImage.value = false
+  }
 }
 
 const scrollToBottom = () => {
@@ -1028,17 +1216,10 @@ onMounted(async () => {
     await new Promise(resolve => setTimeout(resolve, 500))
     console.log('可用角色:', chatStore.characters)
     
-    // 自动选择角色
+    // 强制用户选择角色
     if (!chatStore.selectedCharacter) {
-      // 默认选择喜羊羊（儿子）
-      const defaultCharacter = chatStore.characters.find(c => c.id === 'xiyang')
-      if (defaultCharacter) {
-        console.log('选择默认角色:', defaultCharacter.name)
-        await chatStore.selectCharacter(defaultCharacter)
-      } else {
-        console.log('未找到默认角色，显示角色选择器')
+      console.log('🎭 没有选择角色，显示角色选择器')
       showCharacterSelector.value = true
-      }
     }
     
     // 初始化语音识别
@@ -1400,6 +1581,58 @@ watch(() => chatStore.selectedCharacter, (newCharacter) => {
   0% { transform: scale(1); }
   50% { transform: scale(1.1); }
   100% { transform: scale(1); }
+}
+
+/* 图片生成按钮样式 */
+.image-generate-toggle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f0;
+  border: 2px solid #e0e0e0;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.image-generate-toggle:hover {
+  background: #e8e8e8;
+  transform: scale(1.1);
+  border-color: #e6a23c;
+  color: #e6a23c;
+}
+
+.image-generate-toggle.generating {
+  background: #e6a23c;
+  border-color: #e6a23c;
+  color: white;
+  animation: pulse 1.5s infinite;
+}
+
+/* 图片生成对话框样式 */
+.image-generator-dialog {
+  padding: 20px 0;
+}
+
+.character-style-info {
+  margin: 15px 0;
+  text-align: center;
+}
+
+.image-form {
+  margin: 20px 0;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #ebeef5;
 }
 
 /* 文件上传对话框样式 */

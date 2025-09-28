@@ -11,6 +11,7 @@ langchain-community>=0.3.0
 
 # 异步支持
 httpx>=0.27.0
+aiohttp>=3.9.0
 aiofiles>=24.1.0
 
 # 音频处理（ASR + TTS）

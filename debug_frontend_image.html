@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端图片接收调试</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .test-section { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .success { color: green; } .error { color: red; } .info { color: blue; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        img { max-width: 300px; margin: 10px 0; border-radius: 5px; }
+        .image-info { background: #e7f3ff; padding: 10px; margin: 10px 0; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>🔧 前端图片接收调试工具</h1>
+    
+    <div class="test-section">
+        <h3>1. 测试AI Agent接口直接调用</h3>
+        <button onclick="testAIAgentDirect()">直接测试AI Agent</button>
+        <div id="ai-agent-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>2. 测试前端chatService调用</h3>
+        <button onclick="testChatService()">测试前端Service</button>
+        <div id="chat-service-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>3. 图片显示测试</h3>
+        <div id="image-display"></div>
+    </div>
+
+    <script>
+        let latestImageData = null;
+
+        async function testAIAgentDirect() {
+            const resultDiv = document.getElementById('ai-agent-result');
+            resultDiv.innerHTML = '<div class="info">🔄 正在测试AI Agent接口...</div>';
+            
+            try {
+                const response = await fetch('http://localhost:8001/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: '画一只可爱的小猫咪',
+                        user_id: 'debug_user',
+                        character_id: 'meiyang'
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    const hasImageUrl = !!(data.image_url);
+                    const hasImageBase64 = !!(data.image_base64);
+                    const imageUrlLength = data.image_url ? data.image_url.length : 0;
+                    const imageBase64Length = data.image_base64 ? data.image_base64.length : 0;
+                    
+                    latestImageData = data;
+                    
+                    resultDiv.innerHTML = `
+                        <div class="success">✅ AI Agent接口调用成功</div>
+                        <div><strong>响应检查:</strong></div>
+                        <ul>
+                            <li>response存在: ${!!data.response}</li>
+                            <li>image_url存在: ${hasImageUrl} ${hasImageUrl ? `(${imageUrlLength}字符)` : ''}</li>
+                            <li>image_base64存在: ${hasImageBase64} ${hasImageBase64 ? `(${imageBase64Length}字符)` : ''}</li>
+                            <li>image_description: ${data.image_description || '无'}</li>
+                        </ul>
+                        <div><strong>角色回应:</strong> ${data.response.substring(0, 100)}...</div>
+                        ${hasImageUrl ? `<div class="image-info">🔗 图片URL: <a href="${data.image_url}" target="_blank">查看图片</a></div>` : ''}
+                        <button onclick="showImageFromAIAgent()">显示图片</button>
+                        <pre>${JSON.stringify(data, null, 2).substring(0, 500)}...</pre>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ AI Agent请求失败: ${response.status}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ 请求异常: ${error.message}</div>`;
+            }
+        }
+
+        async function testChatService() {
+            const resultDiv = document.getElementById('chat-service-result');
+            resultDiv.innerHTML = '<div class="info">🔄 正在测试前端ChatService...</div>';
+            
+            try {
+                // 模拟前端chatService的调用逻辑
+                const aiResponse = await fetch('http://localhost:8001/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: 'debug_user',
+                        character_id: 'xiyang',
+                        message: '画一朵美丽的玫瑰花',
+                        force_web_search: false,
+                        voice_config: { voice: 'onyx', speed: 1.0 }
+                    })
+                });
+                
+                const aiData = await aiResponse.json();
+                
+                // 模拟前端的字段转换逻辑
+                const frontendResponse = {
+                    characterId: aiData.character_id,
+                    characterName: aiData.character_name,
+                    response: aiData.response,
+                    emotion: aiData.emotion || 'neutral',
+                    timestamp: aiData.timestamp || new Date().toISOString(),
+                    audioUrl: aiData.audio_url,
+                    audioBase64: aiData.audio_base64,
+                    webSearchUsed: aiData.web_search_used || false,
+                    webSearchQuery: aiData.web_search_query,
+                    webSearchResultsCount: aiData.web_search_results_count || 0,
+                    // 图片字段映射
+                    imageUrl: aiData.image_url,
+                    imageBase64: aiData.image_base64,
+                    imageDescription: aiData.image_description,
+                    enhancedPrompt: aiData.enhanced_prompt
+                };
+                
+                latestImageData = frontendResponse;
+                
+                const hasImageUrl = !!(frontendResponse.imageUrl);
+                const hasImageBase64 = !!(frontendResponse.imageBase64);
+                
+                resultDiv.innerHTML = `
+                    <div class="success">✅ 前端Service调用成功</div>
+                    <div><strong>转换后的字段检查:</strong></div>
+                    <ul>
+                        <li>imageUrl: ${hasImageUrl}</li>
+                        <li>imageBase64: ${hasImageBase64}</li>
+                        <li>imageDescription: ${frontendResponse.imageDescription || '无'}</li>
+                        <li>enhancedPrompt: ${!!frontendResponse.enhancedPrompt}</li>
+                    </ul>
+                    <div><strong>角色回应:</strong> ${frontendResponse.response.substring(0, 100)}...</div>
+                    ${hasImageUrl ? `<div class="image-info">🔗 转换后的图片URL存在，长度: ${frontendResponse.imageUrl.length}</div>` : ''}
+                    <button onclick="showImageFromFrontend()">显示转换后的图片</button>
+                    <pre>${JSON.stringify(frontendResponse, null, 2).substring(0, 600)}...</pre>
+                `;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ ChatService测试失败: ${error.message}</div>`;
+            }
+        }
+
+        function showImageFromAIAgent() {
+            if (!latestImageData || !latestImageData.image_url) {
+                alert('没有图片数据可显示');
+                return;
+            }
+            showImage(latestImageData.image_url, latestImageData.image_description, '来自AI Agent');
+        }
+
+        function showImageFromFrontend() {
+            if (!latestImageData || !latestImageData.imageUrl) {
+                alert('没有前端图片数据可显示');
+                return;
+            }
+            showImage(latestImageData.imageUrl, latestImageData.imageDescription, '来自前端转换');
+        }
+
+        function showImage(imageUrl, description, source) {
+            const displayDiv = document.getElementById('image-display');
+            displayDiv.innerHTML = `
+                <h4>🖼️ 图片显示测试 (${source})</h4>
+                <div class="image-info">
+                    <div><strong>描述:</strong> ${description || '无描述'}</div>
+                    <div><strong>URL:</strong> <a href="${imageUrl}" target="_blank">${imageUrl.substring(0, 50)}...</a></div>
+                </div>
+                <img src="${imageUrl}" alt="${description || '生成的图片'}" onload="console.log('图片加载成功')" onerror="console.error('图片加载失败', this.src)">
+                <div><small>如果图片不显示，请检查控制台错误信息或点击URL链接在新窗口查看</small></div>
+            `;
+        }
+
+        // 页面加载完成后自动运行测试
+        window.onload = function() {
+            console.log('🔧 调试页面已加载，可以开始测试');
+        };
+    </script>
+</body>
+</html>

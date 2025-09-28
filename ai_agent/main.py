@@ -46,6 +46,11 @@ class ChatResponse(BaseModel):
     web_search_used: Optional[bool] = False  # 是否使用了联网搜索
     web_search_query: Optional[str] = None  # 搜索查询词
     web_search_results_count: Optional[int] = 0  # 搜索结果数量
+    # 图片生成相关字段
+    image_url: Optional[str] = None  # 生成的图片URL
+    image_base64: Optional[str] = None  # 生成的图片Base64编码
+    image_description: Optional[str] = None  # 用户提供的图片描述
+    enhanced_prompt: Optional[str] = None  # AI增强后的提示词
 
 
 class WebSearchResponse(BaseModel):
@@ -166,18 +171,58 @@ async def switch_character(character_id: str):
 
 @app.get("/characters/{character_id}/greeting")
 async def get_character_greeting(character_id: str):
-    """获取角色问候语"""
+    """获取角色问候语，包含TTS音频"""
     try:
         agent = conversation_graph.character_manager.get_agent(character_id)
         if not agent:
             raise HTTPException(status_code=404, detail=f"角色 {character_id} 不存在")
         
         greeting = agent.get_greeting()
+        
+        # 生成问候语的TTS音频
+        try:
+            from services.audio_service import AudioService
+            audio_service = AudioService()
+            
+            # 获取角色的音色配置
+            voice_config = agent.config.get("voice_config", {})
+            voice_speed = voice_config.get("speed", agent.config.get("voice_speed", 1.0))
+            
+            print(f"🎵 为角色 {character_id} 生成问候语TTS...")
+            tts_audio = await audio_service.generate_character_voice(
+                character_id=character_id,
+                text=greeting,
+                speed=voice_speed
+            )
+            
+            if tts_audio:
+                import base64
+                from datetime import datetime
+                audio_base64 = base64.b64encode(tts_audio).decode('utf-8')
+                audio_url = f"/audio/greeting_{character_id}_{datetime.now().timestamp()}.wav"
+                print(f"✅ 问候语TTS生成成功: {len(tts_audio)} 字节")
+                
+                return {
+                    "character_id": character_id,
+                    "character_name": agent.config["name"],
+                    "greeting": greeting,
+                    "audio_base64": audio_base64,
+                    "audio_url": audio_url
+                }
+            else:
+                print("⚠️ 问候语TTS生成失败，返回纯文本")
+                
+        except Exception as tts_error:
+            print(f"❌ 问候语TTS生成出错: {tts_error}")
+            # TTS失败不影响问候语返回
+        
+        # 如果TTS失败，只返回文本
         return {
             "character_id": character_id,
             "character_name": agent.config["name"],
             "greeting": greeting
         }
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取问候语失败: {str(e)}")
 
@@ -253,17 +298,53 @@ async def text_chat(request: ChatRequest):
             for ctx in rag_result.relevant_contexts:
                 print(f"   - {ctx['source']}: {ctx['content'][:50]}...")
         
+        # 检查是否需要生成图片
+        image_result = None
+        image_description = None
+        from services.image_service import image_service
+        
+        if image_service.should_generate_image(request.message):
+            print(f"🎨 检测到图片生成请求，开始生成图片...")
+            image_description = image_service.extract_image_description(request.message)
+            print(f"🖼️ 图片描述: {image_description}")
+            
+            # 生成图片
+            image_result = await image_service.generate_image(
+                user_prompt=image_description,
+                character_id=request.character_id,
+                style_preference=None
+            )
+            
+            print(f"🎨 图片生成结果: {'成功' if image_result.get('success') else '失败'}")
+        
         # 构建用户上下文
         user_context = {
             "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "user_id": request.user_id,
             "thread_id": request.thread_id or f"{request.user_id}_{request.character_id}",
             "rag_result": rag_result,  # 添加GraphRAG搜索结果
-            "web_search_result": web_search_result  # 添加联网搜索结果
+            "web_search_result": web_search_result,  # 添加联网搜索结果
+            "image_result": image_result,  # 添加图片生成结果
+            "image_description": image_description  # 添加图片描述
         }
         
         # 生成回复
         response_data = agent.generate_response(request.message, user_context)
+        
+        # 如果生成了图片，获取角色对图片的回应并添加到响应中
+        if image_result:
+            character_image_response = await image_service.get_character_image_response(
+                request.character_id, image_result
+            )
+            # 将角色的图片回应添加到原回复中
+            if image_result.get("success"):
+                response_data["response"] = character_image_response
+                response_data["image_url"] = image_result.get("image_url")
+                response_data["image_base64"] = image_result.get("image_base64") 
+                response_data["image_description"] = image_description
+                response_data["enhanced_prompt"] = image_result.get("enhanced_prompt")
+            else:
+                response_data["response"] = character_image_response
         
         # 保存对话到记忆系统
         conversation_data = {
@@ -304,9 +385,9 @@ async def text_chat(request: ChatRequest):
             from services.audio_service import AudioService
             audio_service = AudioService()
             
-            tts_audio = await audio_service.text_to_speech(
+            tts_audio = await audio_service.generate_character_voice(
+                character_id=request.character_id,
                 text=response_data["response"],
-                voice=character_voice,
                 speed=voice_speed
             )
             
@@ -337,7 +418,12 @@ async def text_chat(request: ChatRequest):
             audio_base64=audio_base64,  # 添加音频Base64
             web_search_used=web_search_used,  # 是否使用了联网搜索
             web_search_query=request.message if web_search_used else None,  # 搜索查询词
-            web_search_results_count=web_search_result.get('total_results', 0) if web_search_result else 0  # 搜索结果数量
+            web_search_results_count=web_search_result.get('total_results', 0) if web_search_result else 0,  # 搜索结果数量
+            # 图片生成相关字段
+            image_url=response_data.get("image_url"),
+            image_base64=response_data.get("image_base64"),
+            image_description=response_data.get("image_description"),
+            enhanced_prompt=response_data.get("enhanced_prompt")
         )
         
     except Exception as e:
@@ -391,20 +477,16 @@ async def voice_chat(
             character_id=character_id
         )
         
-        # 语音合成 - 使用角色专属音色
+        # 语音合成 - 使用角色专属TTS函数
         voice_config = result.get("voice_config", {})
-        # 确保使用角色配置的音色，而不是默认值
-        character_voice = voice_config.get("voice")
-        if not character_voice:
-            print(f"⚠️ 未找到角色{character_id}的音色配置，使用默认音色Cherry")
-            character_voice = "Cherry"  # 仅作为备用
-            
-        print(f"🎵 使用音色: {character_voice} 为角色 {character_id}")
+        voice_speed = voice_config.get("speed", 1.0)
         
-        tts_audio = await audio_service.text_to_speech(
+        print(f"🎵 使用角色专用TTS函数 为角色 {character_id}")
+        
+        tts_audio = await audio_service.generate_character_voice(
+            character_id=character_id,
             text=result["response"],
-            voice=character_voice,
-            speed=voice_config.get("speed", 1.0)
+            speed=voice_speed
         )
         
         # 这里简化处理，实际应该保存音频文件并返回URL

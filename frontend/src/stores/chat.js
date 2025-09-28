@@ -55,7 +55,7 @@ const defaultCharacters = [
     role: '儿子',
     personality: '聪明、勇敢、孝顺、责任心强，总是关心家人的安全和健康',
     avatarUrl: '/images/character_xiyang.png',
-    voice: 'Ethan',  // 成熟男性声音 - 儿子
+    voice: 'onyx',  // OpenAI深沉男声，成熟稳重 - 儿子
     voice_speed: 1.0
   },
   {
@@ -65,7 +65,7 @@ const defaultCharacters = [
     role: '女儿',
     personality: '温柔、细心、贴心、善解人意，是父母的贴心小棉袄',
     avatarUrl: '/images/character_meiyang.png',
-    voice: 'Cherry',  // 温柔女性声音 - 女儿
+    voice: 'nova',  // OpenAI优雅女声，清晰温暖 - 女儿
     voice_speed: 0.9
   },
   {
@@ -75,7 +75,7 @@ const defaultCharacters = [
     role: '孙子',
     personality: '天真烂漫、活泼可爱、爱撒娇、充满童趣，是爷爷奶奶的开心果',
     avatarUrl: '/images/character_lanyang.png',
-    voice: 'Dylan',  // 年轻活泼声音 - 孙子
+    voice: 'fable',  // OpenAI英国口音，年轻活泼 - 孙子
     voice_speed: 1.1
   }
 ]
@@ -89,7 +89,7 @@ const defaultCharacters = [
           id: char.characterId || char.id,  // 确保有id字段
           characterId: char.characterId || char.id,  // 确保有characterId字段
           // 保证音色配置存在
-          voice: char.voice || (char.id === 'xiyang' ? 'Ethan' : char.id === 'meiyang' ? 'Cherry' : 'Dylan'),
+          voice: char.voice || (char.id === 'xiyang' ? 'onyx' : char.id === 'meiyang' ? 'shimmer' : 'fable'),
           voice_speed: char.voice_speed || 1.0
         }))
         console.log('角色数据加载成功:', characters.value.length, '个角色')
@@ -158,7 +158,7 @@ const defaultCharacters = [
         
         // 获取角色的音色配置（确保有默认值）
         const voiceConfig = {
-          voice: character.voice || (character.id === 'xiyang' ? 'Ethan' : character.id === 'meiyang' ? 'Cherry' : 'Dylan'),
+          voice: character.voice || (character.id === 'xiyang' ? 'onyx' : character.id === 'meiyang' ? 'shimmer' : 'fable'),
           speed: character.voice_speed || 1.0
         }
         console.log('🎵 音色配置:', voiceConfig)
@@ -295,6 +295,15 @@ const defaultCharacters = [
       
       // 添加AI回复
       console.log('🤖 AI回复数据:', response)
+      
+      // 🐞 调试: 检查store接收的图片数据
+      console.log('🖼️ Store接收到的图片数据:', {
+        imageUrl: !!response.imageUrl,
+        imageBase64: !!response.imageBase64,
+        imageDescription: response.imageDescription,
+        imageUrl_value: response.imageUrl ? response.imageUrl.substring(0, 50) + '...' : '无',
+        imageBase64_length: response.imageBase64 ? response.imageBase64.length : 0
+      })
       const aiMessage = {
         id: `ai-${Date.now()}`,
         content: response.aiResponseText || response.response || response.message || '系统繁忙，请稍后重试',
@@ -303,7 +312,12 @@ const defaultCharacters = [
         avatar: selectedCharacter.value.avatarUrl,
         characterName: response.characterName || selectedCharacter.value.name,
         audioUrl: response.aiAudioUrl,
-        audioBase64: response.audioBase64  // 添加audioBase64数据
+        audioBase64: response.audioBase64,  // 添加audioBase64数据
+        // 图片相关字段 - 处理字段名不匹配的问题
+        imageUrl: response.imageUrl || response.image_url,
+        imageBase64: response.imageBase64 || response.image_base64,
+        imageDescription: response.imageDescription || response.image_description,
+        enhancedPrompt: response.enhancedPrompt || response.enhanced_prompt
       }
       
       messages.value.push(aiMessage)

@@ -12,8 +12,7 @@ from typing import Optional, Dict, Any, Union, AsyncGenerator
 import numpy as np
 import soundfile as sf
 from pydub import AudioSegment
-import dashscope
-from dashscope.audio.tts import SpeechSynthesizer
+from openai import OpenAI
 import asyncio
 
 from config import Config
@@ -27,6 +26,11 @@ class AudioService:
         self.api_key = Config.DASHSCOPE_API_KEY
         self.sample_rate = Config.SAMPLE_RATE
         self.channels = Config.CHANNELS
+        
+        # 初始化OpenAI客户端
+        if Config.USE_OPENAI_TTS:
+            self.openai_client = OpenAI(api_key=Config.OPENAI_API_KEY)
+            print(f"✅ OpenAI TTS客户端初始化完成")
         
         # 支持的音频格式
         self.supported_formats = ['wav', 'mp3', 'm4a', 'flac', 'ogg']
@@ -206,53 +210,150 @@ class AudioService:
             print(f"❌ 语音合成失败: {e}")
             raise
     
+    async def _generate_xiyang_voice(self, text: str, speed: float) -> bytes:
+        """喜羊羊专用TTS - 深沉男声onyx"""
+        print(f"🎭 生成喜羊羊声音 - voice=onyx, text={text[:20]}...")
+        response = self.openai_client.audio.speech.create(
+            model=Config.TTS_MODEL,
+            voice="onyx",  # 固定使用onyx深沉男声
+            input=text,
+            speed=speed
+        )
+        audio_data = response.content
+        print(f"✅ 喜羊羊TTS成功，生成 {len(audio_data)} 字节音频数据")
+        return audio_data
+    
+    async def _generate_meiyang_voice(self, text: str, speed: float) -> bytes:
+        """美羊羊专用TTS - 优雅女声nova"""
+        print(f"🌸 生成美羊羊声音 - voice=nova, text={text[:20]}...")
+        response = self.openai_client.audio.speech.create(
+            model=Config.TTS_MODEL,
+            voice="nova",  # 固定使用nova优雅女声
+            input=text,
+            speed=speed
+        )
+        audio_data = response.content
+        print(f"✅ 美羊羊TTS成功，生成 {len(audio_data)} 字节音频数据")
+        return audio_data
+    
+    async def _generate_lanyang_voice(self, text: str, speed: float) -> bytes:
+        """懒羊羊专用TTS - 英国口音fable"""
+        print(f"🇬🇧 生成懒羊羊声音 - voice=fable, text={text[:20]}...")
+        response = self.openai_client.audio.speech.create(
+            model=Config.TTS_MODEL,
+            voice="fable",  # 固定使用fable英国口音
+            input=text,
+            speed=speed
+        )
+        audio_data = response.content
+        print(f"✅ 懒羊羊TTS成功，生成 {len(audio_data)} 字节音频数据")
+        return audio_data
+
+    async def generate_character_voice(self, character_id: str, text: str, speed: float = 1.0) -> bytes:
+        """根据角色ID生成专用声音"""
+        print(f"🎯 根据角色ID选择专用TTS - character_id={character_id}")
+        
+        if character_id == "xiyang":
+            return await self._generate_xiyang_voice(text, speed)
+        elif character_id == "meiyang":
+            return await self._generate_meiyang_voice(text, speed)
+        elif character_id == "lanyang":
+            return await self._generate_lanyang_voice(text, speed)
+        else:
+            # 默认使用onyx声音
+            print(f"⚠️ 未知角色ID {character_id}，使用默认onyx声音")
+            return await self._generate_xiyang_voice(text, speed)
+
     async def _text_to_speech_batch(
         self, 
         text: str, 
         voice: str, 
         speed: float
     ) -> bytes:
-        """批量TTS处理 - 使用qwen3-tts-flash-realtime模型"""
+        """批量TTS处理 - 使用角色专用TTS函数"""
         try:
-            # 使用正确的SpeechSynthesizer API
-            from dashscope.audio.qwen_tts import SpeechSynthesizer
-            
-            response = SpeechSynthesizer.call(
-                model=Config.TTS_MODEL,
-                api_key=self.api_key,
-                text=text,
-                voice=voice,
-                language_type="Chinese",
-                stream=False
-            )
-            
-            print(f"🎵 TTS调用参数: model={Config.TTS_MODEL}, voice={voice}, text={text[:20]}...")
-            
-            # 详细调试响应结构
-            print(f"🔍 TTS响应结构: {type(response)}")
-            print(f"🔍 response属性: {dir(response)}")
-            
-            if hasattr(response, 'output'):
-                print(f"🔍 output类型: {type(response.output)}")
-                print(f"🔍 output属性: {dir(response.output)}")
+            # 如果启用了OpenAI TTS，根据voice参数选择专用函数
+            if Config.USE_OPENAI_TTS:
+                print(f"🎵 选择角色专用TTS函数 - voice={voice}")
                 
-                if hasattr(response.output, 'audio'):
-                    print(f"🔍 audio类型: {type(response.output.audio)}")
-                    print(f"🔍 audio内容: {response.output.audio}")
+                # 根据voice参数调用对应的专用函数
+                if voice == "onyx":
+                    return await self._generate_xiyang_voice(text, speed)
+                elif voice == "nova":  # 美羊羊现在使用nova音色
+                    return await self._generate_meiyang_voice(text, speed)
+                elif voice == "fable":
+                    return await self._generate_lanyang_voice(text, speed)
+                else:
+                    # 默认情况下使用通用方法
+                    print(f"🎵 使用通用OpenAI TTS - model={Config.TTS_MODEL}, voice={voice}, text={text[:20]}...")
+                    response = self.openai_client.audio.speech.create(
+                        model=Config.TTS_MODEL,
+                        voice=voice,
+                        input=text,
+                        speed=speed
+                    )
+                    audio_data = response.content
+                    print(f"✅ 通用OpenAI TTS成功，生成 {len(audio_data)} 字节音频数据")
+                    return audio_data
+            
+            # 如果使用DashScope（保留原有逻辑作为备份）
+            else:
+                import dashscope
+                from dashscope.audio.tts import SpeechSynthesizer
+                
+                # 设置API key
+                dashscope.api_key = self.api_key
+                
+                response = SpeechSynthesizer.call(
+                    model=Config.TTS_MODEL,
+                    text=text,
+                    voice=voice,
+                    sample_rate=24000,
+                    format='wav'
+                )
+                
+                print(f"🎵 DashScope TTS调用参数: model={Config.TTS_MODEL}, voice={voice}, text={text[:20]}...")
+                
+                # DashScope SDK返回的是SpeechSynthesisResult对象，不是HTTP响应
+                if hasattr(response, 'get_audio_data'):
+                    # 检查响应状态
+                    api_response = response.get_response()
+                    print(f"🔍 API响应: {api_response}")
                     
-                    # 尝试不同的访问方式
-                    if isinstance(response.output.audio, dict):
-                        if 'url' in response.output.audio:
-                            audio_url = response.output.audio['url']
-                            print(f"✅ 使用字典方式获得URL: {audio_url}")
-                            
-                            # 下载音频数据
-                            audio_response = requests.get(audio_url)
-                            audio_response.raise_for_status()
-                            
-                            audio_data = audio_response.content
-                            print(f"✅ 音频下载成功: {len(audio_data)}字节")
-                            return audio_data
+                    # 直接获取音频数据
+                    audio_data = response.get_audio_data()
+                    if audio_data:
+                        print(f"✅ DashScope TTS成功，生成 {len(audio_data)} 字节音频数据")
+                        return audio_data
+                    else:
+                        print("⚠️ 响应成功但无音频数据")
+                else:
+                    # 记录详细错误信息
+                    print(f"🔍 TTS响应结构: {type(response)}")
+                    print(f"🔍 response属性: {dir(response)}")
+                    
+                    if hasattr(response, 'output'):
+                        print(f"🔍 output类型: {type(response.output)}")
+                        print(f"🔍 output属性: {dir(response.output)}") 
+                    
+                        if hasattr(response.output, 'audio'):
+                            print(f"🔍 audio类型: {type(response.output.audio)}")
+                            print(f"🔍 audio内容: {response.output.audio}")
+                        
+                        # 尝试不同的访问方式
+                        if isinstance(response.output.audio, dict):
+                            if 'url' in response.output.audio:
+                                audio_url = response.output.audio['url']
+                                print(f"✅ 使用字典方式获得URL: {audio_url}")
+                                
+                                # 下载音频数据
+                                import requests
+                                audio_response = requests.get(audio_url)
+                                audio_response.raise_for_status()
+                                
+                                audio_data = audio_response.content
+                                print(f"✅ 音频下载成功: {len(audio_data)}字节")
+                                return audio_data
                             
                         elif 'data' in response.output.audio:
                             # 直接返回Base64数据

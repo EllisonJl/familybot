@@ -74,6 +74,15 @@ const chatService = {
       const aiData = await aiResponse.json()
       console.log('AI Agent响应:', aiData)
       
+      // 🐞 调试: 检查图片字段
+      console.log('🖼️ 图片字段检查:', {
+        image_url_exists: !!aiData.image_url,
+        image_base64_exists: !!aiData.image_base64,
+        image_description: aiData.image_description,
+        image_url_length: aiData.image_url ? aiData.image_url.length : 0,
+        image_base64_length: aiData.image_base64 ? aiData.image_base64.length : 0
+      })
+      
       // 检查AI Agent响应是否有效
       if (!aiData.response || aiData.response.trim() === '') {
         console.error('❌ AI Agent返回空响应:', aiData)
@@ -91,10 +100,25 @@ const chatService = {
         audioBase64: aiData.audio_base64,
         webSearchUsed: aiData.web_search_used || false,
         webSearchQuery: aiData.web_search_query,
-        webSearchResultsCount: aiData.web_search_results_count || 0
+        webSearchResultsCount: aiData.web_search_results_count || 0,
+        // 🎨 添加图片相关字段映射
+        imageUrl: aiData.image_url,
+        imageBase64: aiData.image_base64,
+        imageDescription: aiData.image_description,
+        enhancedPrompt: aiData.enhanced_prompt
       }
       
       console.log('转换后的前端响应:', frontendResponse)
+      
+      // 🐞 调试: 检查转换后的图片字段
+      console.log('🖼️ 转换后图片字段检查:', {
+        imageUrl_exists: !!frontendResponse.imageUrl,
+        imageBase64_exists: !!frontendResponse.imageBase64,
+        imageDescription: frontendResponse.imageDescription,
+        imageUrl_length: frontendResponse.imageUrl ? frontendResponse.imageUrl.length : 0,
+        imageBase64_length: frontendResponse.imageBase64 ? frontendResponse.imageBase64.length : 0
+      })
+      
       return frontendResponse
       
     } catch (error) {

@@ -86,4 +86,10 @@ public class ChatResponse {
     private int cotStepsCount;      // CoT步骤数量
     private String cotAnalysis;     // CoT分析结果
     private Map<String, Object> routerInfo;  // 路由信息
+    
+    // 图片生成相关字段
+    private String imageUrl;        // 生成的图片URL
+    private String imageBase64;     // 生成的图片Base64编码
+    private String imageDescription; // 用户提供的图片描述
+    private String enhancedPrompt;  // AI增强后的提示词
 }
