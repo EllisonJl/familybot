@@ -57,11 +57,26 @@
 git clone <repository-url>
 cd familybot
 
-# 一键启动所有服务
+# 🆕 启动数据库服务 (MySQL + Redis)
+./start-database.sh
+
+# 一键启动应用服务
 ./start.sh
 ```
 
 ### 手动启动（可选）
+
+0. **🆕 启动数据库服务**
+```bash
+# 启动 MySQL 和 Redis
+./start-database.sh
+
+# 或手动启动
+docker-compose up -d mysql redis
+
+# 验证服务状态
+docker-compose ps
+```
 
 1. **启动 AI Agent**
 ```bash
@@ -89,6 +104,8 @@ npm run dev
 - 🌐 **前端界面**: http://localhost:5173
 - 🔗 **后端API**: http://localhost:8080
 - 🤖 **AI服务**: http://localhost:8001
+- 🗄️ **数据库管理**: http://localhost:8090 (phpMyAdmin) 🆕
+- 📊 **缓存管理**: http://localhost:8081 (Redis Commander) 🆕
 
 ## 📱 使用指南
 
@@ -166,10 +183,12 @@ python test_cot_system.py
 - **构建工具**: Vite
 - **HTTP客户端**: Axios
 
-### 后端 (Spring Boot)
+### 后端 (Spring Boot + MySQL + Redis)
 - **框架**: Spring Boot 3.5.6
-- **数据库**: H2 (开发) / PostgreSQL (生产)
+- **数据库**: MySQL 8.0 🆕
+- **缓存**: Redis 7 + Spring Cache 🆕
 - **ORM**: Spring Data JPA
+- **连接池**: HikariCP + Jedis 🆕
 - **API**: RESTful + JSON
 - **HTTP客户端**: WebClient
 - **工具**: Lombok

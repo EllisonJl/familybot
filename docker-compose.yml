@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # MySQL 数据库服务
+  mysql:
+    image: mysql:8.0
+    container_name: familybot-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: familybot
+      MYSQL_USER: familybot
+      MYSQL_PASSWORD: familybot123
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    command: 
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    networks:
+      - familybot-network
+
+  # Redis 缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: familybot-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - familybot-network
+
+  # phpMyAdmin (可选，用于数据库管理)
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: familybot-phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: familybot
+      PMA_PASSWORD: familybot123
+      MYSQL_ROOT_PASSWORD: root123
+    ports:
+      - "8090:80"
+    depends_on:
+      - mysql
+    networks:
+      - familybot-network
+
+  # Redis Commander (可选，用于Redis管理)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: familybot-redis-commander
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - familybot-network
+
+# 数据卷
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# 网络配置
+networks:
+  familybot-network:
+    driver: bridge

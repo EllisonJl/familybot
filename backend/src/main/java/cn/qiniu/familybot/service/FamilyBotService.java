@@ -11,6 +11,8 @@ import cn.qiniu.familybot.repository.CharacterRepository;
 import cn.qiniu.familybot.repository.ConversationRepository;
 import cn.qiniu.familybot.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +43,7 @@ public class FamilyBotService {
     }
 
     // --- User Management ---
+    @CacheEvict(value = "users", allEntries = true)
     public UserDTO createUser(UserDTO userDTO) {
         User user = new User();
         user.setUsername(userDTO.getUsername());
@@ -48,10 +51,13 @@ public class FamilyBotService {
         user.setAvatarUrl(userDTO.getAvatarUrl());
         user.setPasswordHash("dummy_hash");
         User savedUser = userRepository.save(user);
+        log.info("创建用户后清除用户列表缓存");
         return convertToUserDTO(savedUser);
     }
     
+    @Cacheable(value = "users", unless = "#result.isEmpty()")
     public List<Map<String, Object>> getAllUsers() {
+        log.info("从数据库查询所有用户列表");
         return userRepository.findAll().stream()
             .map(user -> {
                 Map<String, Object> userMap = new HashMap<>();
@@ -81,13 +87,16 @@ public class FamilyBotService {
         return result;
     }
 
+    @Cacheable(value = "userById", key = "#id", unless = "#result.isEmpty()")
     public Optional<UserDTO> getUserById(Long id) {
+        log.info("从数据库查询用户: {}", id);
         return userRepository.findById(id).map(this::convertToUserDTO);
     }
 
     // 重复方法已删除
 
     // --- Character Management ---
+    @CacheEvict(value = "characters", allEntries = true)
     public CharacterDTO createCharacter(CharacterDTO characterDTO) {
         Character character = new Character();
         character.setName(characterDTO.getName());
@@ -96,14 +105,19 @@ public class FamilyBotService {
         character.setVoiceConfig(characterDTO.getVoiceConfig().toString());
         character.setAvatarUrl(characterDTO.getAvatarUrl());
         Character savedCharacter = characterRepository.save(character);
+        log.info("创建角色后清除角色列表缓存");
         return convertToCharacterDTO(savedCharacter);
     }
 
+    @Cacheable(value = "characterById", key = "#id", unless = "#result.isEmpty()")
     public Optional<CharacterDTO> getCharacterById(Long id) {
+        log.info("从数据库查询角色: {}", id);
         return characterRepository.findById(id).map(this::convertToCharacterDTO);
     }
 
+    @Cacheable(value = "characters", unless = "#result.isEmpty()")
     public List<CharacterDTO> getAllCharacters() {
+        log.info("从数据库查询所有角色列表");
         return characterRepository.findAll().stream()
                 .map(this::convertToCharacterDTO)
                 .collect(Collectors.toList());
