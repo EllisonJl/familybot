@@ -43,29 +43,65 @@ api.interceptors.response.use(
 
 const chatService = {
   // 发送文本消息
-  sendTextMessage: async (userId, characterId, message, voiceConfig = null) => {
+  sendTextMessage: async (userId, characterId, message, voiceConfig = null, forceWebSearch = false) => {
     try {
-      const requestData = {
-        userId,
-        characterId,
-        message,
-        useAgent: true,  // 强制使用AI Agent
-        role: 'elderly',  // 指定角色为老人
-        voiceConfig: voiceConfig  // 添加音色配置
-      }
-      console.log('发送文本消息:', requestData)
-      console.log('请求URL:', '/chat')
+      // 🔧 临时修复：直接调用AI Agent，绕过后端通信问题
+      console.log('🔧 临时使用直接AI Agent调用')
       
-      const response = await api.post('/chat', requestData)
-      console.log('收到完整响应:', response)
-      return response.data
+      const aiAgentData = {
+        user_id: userId,
+        character_id: characterId,
+        message: message,
+        force_web_search: forceWebSearch,
+        voice_config: voiceConfig
+      }
+      
+      console.log('直接调用AI Agent:', aiAgentData)
+      
+      // 直接调用AI Agent
+      const aiResponse = await fetch('http://localhost:8001/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(aiAgentData)
+      })
+      
+      if (!aiResponse.ok) {
+        throw new Error(`AI Agent请求失败: ${aiResponse.status}`)
+      }
+      
+      const aiData = await aiResponse.json()
+      console.log('AI Agent响应:', aiData)
+      
+      // 检查AI Agent响应是否有效
+      if (!aiData.response || aiData.response.trim() === '') {
+        console.error('❌ AI Agent返回空响应:', aiData)
+        throw new Error('AI Agent返回了空响应，请稍后重试')
+      }
+      
+      // 转换为前端期望的格式
+      const frontendResponse = {
+        characterId: aiData.character_id || characterId,
+        characterName: aiData.character_name || '喜羊羊',
+        response: aiData.response,
+        emotion: aiData.emotion || 'neutral',
+        timestamp: aiData.timestamp || new Date().toISOString(),
+        audioUrl: aiData.audio_url,
+        audioBase64: aiData.audio_base64,
+        webSearchUsed: aiData.web_search_used || false,
+        webSearchQuery: aiData.web_search_query,
+        webSearchResultsCount: aiData.web_search_results_count || 0
+      }
+      
+      console.log('转换后的前端响应:', frontendResponse)
+      return frontendResponse
+      
     } catch (error) {
       console.error('发送文本消息失败:', error)
       console.error('错误详情:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        config: error.config
+        message: error.message,
+        stack: error.stack
       })
       throw error
     }

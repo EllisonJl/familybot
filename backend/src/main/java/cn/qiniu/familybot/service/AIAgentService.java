@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import jakarta.annotation.PostConstruct;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -18,31 +19,44 @@ import java.util.Map;
 @Service
 public class AIAgentService {
 
-    private final WebClient webClient;
+    private WebClient webClient;
+    private final WebClient.Builder webClientBuilder;
     private final ObjectMapper objectMapper;
 
     @Value("${familybot.ai-agent.base-url:http://localhost:8001}")
     private String aiAgentBaseUrl;
 
     public AIAgentService(WebClient.Builder webClientBuilder, ObjectMapper objectMapper) {
+        this.webClientBuilder = webClientBuilder;
+        this.objectMapper = objectMapper;
+    }
+    
+    @PostConstruct
+    public void initWebClient() {
         this.webClient = webClientBuilder
-                .baseUrl("http://localhost:8001")
+                .baseUrl(aiAgentBaseUrl)
                 .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
                 .build();
-        this.objectMapper = objectMapper;
     }
 
     /**
      * 发送文本消息到AI Agent（不带音色配置）
      */
     public Mono<AIAgentResponse> sendTextMessage(String userId, String characterId, String message) {
-        return sendTextMessage(userId, characterId, message, null);
+        return sendTextMessage(userId, characterId, message, null, false);
     }
     
     /**
      * 发送文本消息到AI Agent（带音色配置）
      */
     public Mono<AIAgentResponse> sendTextMessage(String userId, String characterId, String message, Map<String, Object> voiceConfig) {
+        return sendTextMessage(userId, characterId, message, voiceConfig, false);
+    }
+    
+    /**
+     * 发送文本消息到AI Agent（带音色配置和联网搜索）
+     */
+    public Mono<AIAgentResponse> sendTextMessage(String userId, String characterId, String message, Map<String, Object> voiceConfig, Boolean forceWebSearch) {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("user_id", userId);
         requestBody.put("character_id", characterId);
@@ -54,6 +68,11 @@ public class AIAgentService {
         // 添加音色配置
         if (voiceConfig != null) {
             requestBody.put("voice_config", voiceConfig);
+        }
+        
+        // 添加联网搜索配置
+        if (forceWebSearch != null && forceWebSearch) {
+            requestBody.put("force_web_search", true);
         }
 
         return webClient.post()

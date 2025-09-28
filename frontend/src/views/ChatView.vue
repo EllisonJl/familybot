@@ -117,6 +117,17 @@
             </div>
           </el-tooltip>
           
+          <!-- 联网搜索按钮 -->
+          <el-tooltip :content="webSearchEnabled ? '点击关闭联网搜索' : '点击启用联网搜索'" placement="top">
+            <div 
+              class="web-search-toggle" 
+              :class="{ 'enabled': webSearchEnabled, 'searching': isSearching }"
+              @click="toggleWebSearch"
+            >
+              <el-icon><Search /></el-icon>
+            </div>
+          </el-tooltip>
+          
           <!-- 发送按钮 -->
           <el-button
             type="primary"
@@ -238,7 +249,8 @@ import {
   Document,
   UploadFilled,
   DocumentCopy,
-  Delete
+  Delete,
+  Search
 } from '@element-plus/icons-vue'
 
 import { useChatStore } from '@/stores/chat'
@@ -265,6 +277,9 @@ const sidebarCollapsed = ref(false)
 const uploadRef = ref(null)
 const uploadLoading = ref(false)
 const characterDocuments = ref([])
+// 联网搜索相关
+const webSearchEnabled = ref(false)
+const isSearching = ref(false)
 
 // 方法
 const handleSend = async (inputText = null) => {
@@ -289,7 +304,7 @@ const handleSend = async (inputText = null) => {
   }
 
   try {
-    const aiMessage = await chatStore.sendMessage(message)
+    const aiMessage = await chatStore.sendMessage(message, null, webSearchEnabled.value)
     scrollToBottom()
     
     // 如果启用了TTS，播放AI回复
@@ -881,6 +896,13 @@ const toggleTTS = () => {
   }
 }
 
+// 联网搜索相关方法
+const toggleWebSearch = () => {
+  webSearchEnabled.value = !webSearchEnabled.value
+  const status = webSearchEnabled.value ? '启用' : '关闭'
+  ElMessage.info(`联网搜索已${status}`)
+}
+
 const scrollToBottom = () => {
   nextTick(() => {
     if (messageListRef.value) {
@@ -1337,6 +1359,47 @@ watch(() => chatStore.selectedCharacter, (newCharacter) => {
   transform: scale(1.1);
   border-color: #409eff;
   color: #409eff;
+}
+
+/* 联网搜索按钮样式 */
+.web-search-toggle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f0;
+  border: 2px solid #e0e0e0;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.web-search-toggle:hover {
+  background: #e8e8e8;
+  transform: scale(1.1);
+  border-color: #67c23a;
+  color: #67c23a;
+}
+
+.web-search-toggle.enabled {
+  background: #67c23a;
+  border-color: #67c23a;
+  color: white;
+}
+
+.web-search-toggle.searching {
+  background: #ff9800;
+  border-color: #ff9800;
+  color: white;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
 }
 
 /* 文件上传对话框样式 */

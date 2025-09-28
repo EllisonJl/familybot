@@ -221,6 +221,15 @@ class ConversationGraph:
                 context=user_context
             )
             
+            # 确保cot_result不为None
+            if not cot_result:
+                print("⚠️ CoT推理返回空结果，使用默认配置")
+                cot_result = {
+                    "use_cot": False,
+                    "reasoning_steps": [],
+                    "final_analysis": "使用默认回应"
+                }
+            
             # 将CoT结果添加到上下文
             if cot_result.get("use_cot", False):
                 user_context["cot_analysis"] = cot_result["final_analysis"]
@@ -243,7 +252,7 @@ class ConversationGraph:
             )
             
             # Step 3: 用CoT结果增强回复
-            if cot_result.get("use_cot", False):
+            if cot_result and cot_result.get("use_cot", False):
                 enhanced_response = cot_processor.enhance_response_with_cot(
                     original_response=response_data["response"],
                     cot_result=cot_result,
@@ -270,8 +279,9 @@ class ConversationGraph:
             
         except Exception as e:
             print(f"❌ 角色回应生成失败: {e}")
-            state.assistant_response = "抱歉，我现在有点累了，一会儿再聊好吗？"
-            state.emotion = "tired"
+            # 返回明确的错误信息，不使用模糊的fallback
+            state.assistant_response = f"抱歉，系统遇到技术问题：{str(e)[:50]}..."
+            state.emotion = "error"
             state.error = str(e)
             return state
     
@@ -501,10 +511,11 @@ class ConversationGraph:
             
         except Exception as e:
             print(f"❌ 对话处理出错: {e}")
+            error_message = f"对话处理异常: {str(e)[:80]}..."
             return {
                 "character_id": character_id,
                 "character_name": "系统",
-                "response": "抱歉，我现在有点问题，请稍后再试。",
+                "response": error_message,
                 "emotion": "error",
                 "timestamp": datetime.now().isoformat(),
                 "error": str(e)

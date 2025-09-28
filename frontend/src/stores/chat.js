@@ -241,7 +241,7 @@ const defaultCharacters = [
     }
   }
   
-  const sendMessage = async (content, audioData = null) => {
+  const sendMessage = async (content, audioData = null, forceWebSearch = false) => {
     if (!currentUser.value || !selectedCharacter.value) {
       throw new Error('请先选择用户和角色')
     }
@@ -289,7 +289,8 @@ const defaultCharacters = [
         currentUser.value.id,
         characterId,
         content,
-        voiceConfig  // 添加音色配置参数
+        voiceConfig,  // 添加音色配置参数
+        forceWebSearch  // 添加联网搜索参数
       )
       
       // 添加AI回复

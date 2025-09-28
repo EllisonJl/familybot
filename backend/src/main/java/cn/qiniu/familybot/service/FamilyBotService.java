@@ -13,10 +13,12 @@ import cn.qiniu.familybot.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class FamilyBotService {
 
@@ -124,16 +126,22 @@ public class FamilyBotService {
 
         try {
             // 调用AI Agent服务
+            log.info("调用AI Agent服务 - 用户: {}, 角色: {}, 消息: {}, 强制搜索: {}", 
+                user.getId(), characterMappedId, chatRequest.getMessage(), chatRequest.getForceWebSearch());
+            
             AIAgentService.AIAgentResponse aiResponse;
             
             if (chatRequest.getMessage() != null && !chatRequest.getMessage().isEmpty()) {
-                // 文本消息，传递音色配置
+                // 文本消息，传递音色配置和联网搜索配置
                 aiResponse = aiAgentService.sendTextMessage(
                     user.getId().toString(), 
                     characterMappedId, 
                     chatRequest.getMessage(),
-                    chatRequest.getVoiceConfig()  // 传递音色配置
+                    chatRequest.getVoiceConfig(),  // 传递音色配置
+                    chatRequest.getForceWebSearch()  // 传递联网搜索配置
                 ).block();
+                
+                log.info("AI Agent响应成功: {}", aiResponse != null ? "有响应" : "无响应");
             } else if (chatRequest.getAudioBase64() != null && !chatRequest.getAudioBase64().isEmpty()) {
                 // 语音消息
                 aiResponse = aiAgentService.sendAudioMessage(
@@ -179,6 +187,7 @@ public class FamilyBotService {
                 throw new RuntimeException("No response from AI Agent");
             }
         } catch (Exception e) {
+            log.error("AI Agent调用失败 - 异常类型: {}, 异常消息: {}", e.getClass().getSimpleName(), e.getMessage(), e);
             throw new RuntimeException("Failed to get response from AI Agent: " + e.getMessage(), e);
         }
     }

@@ -16,6 +16,7 @@ from config import Config
 from graph.conversation_graph import ConversationGraph
 from services.audio_service import audio_service
 from rag.graph_rag import graph_rag
+from tools.web_search import web_search_tool, perform_web_search
 
 
 # === 数据模型 ===
@@ -28,7 +29,8 @@ class ChatRequest(BaseModel):
     use_agent: Optional[bool] = True
     role: Optional[str] = "elderly"
     thread_id: Optional[str] = None
-    voice_config: Optional[Dict[str, Any]] = None  # 添加音色配置字段
+    voice_config: Optional[Dict[str, Any]] = None
+    force_web_search: Optional[bool] = False  # 强制启用联网搜索
 
 
 class ChatResponse(BaseModel):
@@ -41,6 +43,19 @@ class ChatResponse(BaseModel):
     voice_config: Optional[Dict[str, Any]] = None
     audio_url: Optional[str] = None  # 添加音频URL字段
     audio_base64: Optional[str] = None  # 添加音频Base64字段
+    web_search_used: Optional[bool] = False  # 是否使用了联网搜索
+    web_search_query: Optional[str] = None  # 搜索查询词
+    web_search_results_count: Optional[int] = 0  # 搜索结果数量
+
+
+class WebSearchResponse(BaseModel):
+    """联网搜索响应模型"""
+    query: str
+    timestamp: str
+    total_results: int
+    results: List[Dict[str, Any]]
+    summary: str
+    status: str
 
 
 class VoiceChatRequest(BaseModel):
@@ -196,30 +211,55 @@ async def text_chat(request: ChatRequest):
         if conversation_history:
             agent.conversation_history = []
             for conv in conversation_history[-10:]:  # 最近10条
-                agent.conversation_history.append({
-                    "timestamp": conv.get("timestamp", ""),
-                    "user_message": conv.get("user_message", ""),
-                    "assistant_response": conv.get("assistant_response", ""),
-                    "user_context": conv.get("context", {}),
-                    "chat_analysis": {}
-                })
+                # 检查conv是否为None
+                if conv:
+                    agent.conversation_history.append({
+                        "timestamp": conv.get("timestamp", ""),
+                        "user_message": conv.get("user_message", ""),
+                        "assistant_response": conv.get("assistant_response", ""),
+                        "user_context": conv.get("context", {}),
+                        "chat_analysis": {}
+                    })
+                else:
+                    print("⚠️ 发现空的历史对话记录，跳过")
         
+        # 检查是否需要联网搜索
+        web_search_result = None
+        web_search_used = False
+        if request.force_web_search or web_search_tool.should_search(request.message):
+            print(f"🔍 启动联网搜索: {request.message}")
+            try:
+                web_search_result = await perform_web_search(request.message)
+                web_search_used = True
+                print(f"✅ 联网搜索完成: {web_search_result.get('total_results', 0)} 个结果")
+            except Exception as search_error:
+                print(f"❌ 联网搜索失败: {search_error}")
+                web_search_result = None
+
         # 使用GraphRAG搜索相关知识（包括角色文档）
         print(f"🔍 使用GraphRAG搜索相关知识...")
         rag_result = await graph_rag.query_knowledge(
             query=request.message,
             character_id=request.character_id
         )
-        print(f"📚 GraphRAG搜索结果: {len(rag_result.relevant_contexts)} 个相关上下文")
-        for ctx in rag_result.relevant_contexts:
-            print(f"   - {ctx['source']}: {ctx['content'][:50]}...")
+        
+        # 确保rag_result不为None
+        if not rag_result:
+            print("⚠️ GraphRAG搜索返回空结果")
+            rag_result = type('RAGResult', (), {'relevant_contexts': []})()
+        
+        print(f"📚 GraphRAG搜索结果: {len(rag_result.relevant_contexts) if rag_result.relevant_contexts else 0} 个相关上下文")
+        if rag_result.relevant_contexts:
+            for ctx in rag_result.relevant_contexts:
+                print(f"   - {ctx['source']}: {ctx['content'][:50]}...")
         
         # 构建用户上下文
         user_context = {
             "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "user_id": request.user_id,
             "thread_id": request.thread_id or f"{request.user_id}_{request.character_id}",
-            "rag_result": rag_result  # 添加GraphRAG搜索结果
+            "rag_result": rag_result,  # 添加GraphRAG搜索结果
+            "web_search_result": web_search_result  # 添加联网搜索结果
         }
         
         # 生成回复
@@ -294,22 +334,26 @@ async def text_chat(request: ChatRequest):
             timestamp=response_data["timestamp"],
             voice_config=response_data.get("voice_config"),
             audio_url=audio_url,  # 添加音频URL
-            audio_base64=audio_base64  # 添加音频Base64
+            audio_base64=audio_base64,  # 添加音频Base64
+            web_search_used=web_search_used,  # 是否使用了联网搜索
+            web_search_query=request.message if web_search_used else None,  # 搜索查询词
+            web_search_results_count=web_search_result.get('total_results', 0) if web_search_result else 0  # 搜索结果数量
         )
         
     except Exception as e:
         print(f"❌ 聊天处理失败: {str(e)}")
-        # 返回fallback回复
+        # 返回明确的错误信息，不使用模糊的fallback
         try:
             from config import CHARACTER_CONFIGS
         except ImportError:
             CHARACTER_CONFIGS = {}
         
         character_config = CHARACTER_CONFIGS.get(request.character_id, {})
+        error_message = f"处理失败: {str(e)[:100]}..."
         return ChatResponse(
             character_id=request.character_id,
             character_name=character_config.get("name", "系统"),
-            response="抱歉，我现在有点问题，请稍后再试。",
+            response=error_message,
             emotion="error",
             timestamp=datetime.now().isoformat()
         )
@@ -575,6 +619,68 @@ async def test_audio_pipeline():
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"测试失败: {str(e)}")
+
+
+# === 联网搜索接口 ===
+@app.post("/web-search", response_model=WebSearchResponse)
+async def perform_web_search_api(query: str = Form(..., description="搜索查询")):
+    """
+    执行联网搜索
+    
+    Args:
+        query: 搜索查询词
+    
+    Returns:
+        搜索结果
+    """
+    try:
+        print(f"🔍 收到联网搜索请求: {query}")
+        
+        # 执行搜索
+        search_result = await perform_web_search(query)
+        
+        if search_result:
+            print(f"✅ 联网搜索完成: {search_result.get('total_results', 0)} 个结果")
+            return WebSearchResponse(**search_result)
+        else:
+            return WebSearchResponse(
+                query=query,
+                timestamp=datetime.now().isoformat(),
+                total_results=0,
+                results=[],
+                summary="搜索失败，请稍后重试",
+                status="error"
+            )
+    
+    except Exception as e:
+        print(f"❌ 联网搜索失败: {e}")
+        return WebSearchResponse(
+            query=query,
+            timestamp=datetime.now().isoformat(),
+            total_results=0,
+            results=[],
+            summary=f"搜索出错: {str(e)}",
+            status="error"
+        )
+
+
+@app.get("/web-search/test")
+async def test_web_search():
+    """测试联网搜索功能"""
+    try:
+        test_query = "Hello world"
+        result = await perform_web_search(test_query)
+        return {
+            "success": True,
+            "test_query": test_query,
+            "results_count": result.get('total_results', 0) if result else 0,
+            "message": "联网搜索功能正常" if result else "联网搜索功能异常"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"联网搜索测试失败: {str(e)}"
+        }
 
 
 # === 启动函数 ===

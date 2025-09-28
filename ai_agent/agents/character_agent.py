@@ -7,8 +7,10 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 import json
 import re
+import asyncio
 from openai import OpenAI
 from config import Config, CHARACTER_CONFIGS
+from tools.web_search import web_search_tool, should_use_web_search
 
 
 class CharacterAgent:
@@ -48,11 +50,25 @@ class CharacterAgent:
         """
         base_prompt = self.config["system_prompt"]
         
+        # 如果有联网搜索结果，添加实时信息
+        if user_context and "web_search_result" in user_context:
+            search_result = user_context["web_search_result"]
+            if search_result and search_result.get("status") == "success" and search_result.get("results"):
+                web_info = "\n\n【🔍 最新实时信息】\n"
+                web_info += f"基于联网搜索「{search_result.get('query', '')}」的最新结果，请结合以下信息回答：\n\n"
+                web_info += search_result.get("summary", "")
+                web_info += "\n\n重要提示：请仅使用上述搜索信息的内容来回答用户问题，但不要在回复中包含任何链接、URL或「📎 信息来源」部分。只需要基于这些信息给出自然的回答即可。\n"
+                base_prompt += web_info
+            elif search_result and search_result.get("status") == "error":
+                web_info = "\n\n【搜索提示】\n"
+                web_info += f"联网搜索暂时不可用：{search_result.get('summary', '未知错误')}。请基于已有知识回答，并告知用户当前无法获取最新信息。\n"
+                base_prompt += web_info
+        
         # 如果有RAG搜索结果，添加相关文档信息
         if user_context and "rag_result" in user_context:
             rag_result = user_context["rag_result"]
             if hasattr(rag_result, 'relevant_contexts') and rag_result.relevant_contexts:
-                document_info = "\n\n【重要参考信息】\n"
+                document_info = "\n\n【📚 文档参考信息】\n"
                 document_info += "基于用户上传的文档，以下是相关内容，请优先使用这些信息回答用户问题：\n\n"
                 
                 for i, ctx in enumerate(rag_result.relevant_contexts):
@@ -111,17 +127,40 @@ class CharacterAgent:
         
         return base_prompt
     
-    def detect_chat_type(self, user_message: str) -> Dict[str, Any]:
+    def detect_chat_type(self, user_message: str, user_context: Optional[Dict] = None) -> Dict[str, Any]:
         """
         检测聊天类型，用于决定回复长度和风格
         
         Args:
             user_message: 用户消息
+            user_context: 用户上下文（包含RAG结果）
             
         Returns:
             包含聊天类型、长度级别等信息的字典
         """
         message_lower = user_message.lower()
+        
+        # 实时信息类型（需要联网搜索 - 最长回复）
+        if should_use_web_search(user_message):
+            return {
+                "type": "real_time_info",
+                "confidence": 0.95,
+                "max_tokens": 400,  # 实时信息需要详细回复
+                "length_level": "extra_long",
+                "needs_web_search": True
+            }
+        
+        # 文档相关类型（涉及RAG文档 - 长回复）
+        if user_context and "rag_result" in user_context:
+            rag_result = user_context["rag_result"]
+            if hasattr(rag_result, 'relevant_contexts') and rag_result.relevant_contexts:
+                return {
+                    "type": "document_related",
+                    "confidence": 0.9,
+                    "max_tokens": 350,  # 文档相关需要详细说明
+                    "length_level": "long",
+                    "needs_web_search": False
+                }
         
         # 问题解决类关键词（需要详细回复）
         problem_keywords = [
@@ -190,7 +229,8 @@ class CharacterAgent:
             "type": chat_type,
             "confidence": confidence,
             "max_tokens": max_tokens,
-            "length_level": "short" if max_tokens <= 80 else "medium" if max_tokens <= 150 else "long"
+            "length_level": "short" if max_tokens <= 80 else "medium" if max_tokens <= 150 else "long",
+            "needs_web_search": False
         }
     
     def generate_response(
@@ -210,13 +250,47 @@ class CharacterAgent:
         """
         try:
             # 检测聊天类型和输出长度
-            chat_analysis = self.detect_chat_type(user_message)
+            chat_analysis = self.detect_chat_type(user_message, user_context)
+            
+            # 确保chat_analysis不为None
+            if not chat_analysis:
+                print("⚠️ 聊天分析返回空结果，使用默认配置")
+                chat_analysis = {
+                    "type": "casual",
+                    "confidence": 0.5,
+                    "max_tokens": 100,
+                    "length_level": "medium",
+                    "needs_web_search": False
+                }
+            
+            # 如果需要联网搜索，执行搜索
+            web_search_result = None
+            if chat_analysis and chat_analysis.get("needs_web_search", False):
+                print(f"🔍 检测到需要联网搜索: {user_message}")
+                try:
+                    # 创建事件循环来运行异步搜索
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    web_search_result = loop.run_until_complete(web_search_tool.search(user_message))
+                    loop.close()
+                    if web_search_result:
+                        print(f"✅ 联网搜索完成: {web_search_result.get('total_results', 0)} 个结果")
+                    else:
+                        print("⚠️ 联网搜索返回空结果")
+                except Exception as search_error:
+                    print(f"❌ 联网搜索失败: {search_error}")
+                    web_search_result = None
             
             # 构建消息历史
+            # 将搜索结果添加到用户上下文中
+            enhanced_context = user_context.copy() if user_context else {}
+            if web_search_result:
+                enhanced_context["web_search_result"] = web_search_result
+            
             messages = [
                 {
                     "role": "system", 
-                    "content": self.get_system_prompt(user_context, chat_analysis)
+                    "content": self.get_system_prompt(enhanced_context, chat_analysis)
                 }
             ]
             
@@ -243,10 +317,16 @@ class CharacterAgent:
                 model=Config.LLM_MODEL,
                 messages=messages,
                 temperature=0.7,
-                max_tokens=chat_analysis["max_tokens"]
+                max_tokens=chat_analysis.get("max_tokens", 100)
             )
             
+            # 安全地提取回应内容
+            if not response or not response.choices or not response.choices[0] or not response.choices[0].message:
+                raise Exception("LLM返回无效响应")
+            
             assistant_response = response.choices[0].message.content
+            if not assistant_response:
+                raise Exception("LLM返回空内容")
             
             # 更新对话历史
             self.conversation_history.append({
@@ -254,7 +334,7 @@ class CharacterAgent:
                 "user_message": user_message,
                 "assistant_response": assistant_response,
                 "user_context": user_context or {},
-                "chat_analysis": chat_analysis
+                "chat_analysis": chat_analysis or {}
             })
             
             # 限制历史长度
@@ -278,14 +358,8 @@ class CharacterAgent:
             
         except Exception as e:
             print(f"❌ 生成回应时出错: {e}")
-            return {
-                "character_id": self.character_id,
-                "character_name": self.config["name"],
-                "response": "抱歉，我现在有点累了，一会儿再聊好吗？",
-                "emotion": "tired",
-                "timestamp": datetime.now().isoformat(),
-                "error": str(e)
-            }
+            # 抛出异常让调用方处理，不使用fallback
+            raise Exception(f"AI Agent生成回应失败: {str(e)}")
     
     def _update_context_memory(self, user_message: str, assistant_response: str):
         """

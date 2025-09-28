@@ -68,4 +68,9 @@ public class ChatRequest {
      * 音色配置（可选）
      */
     private Map<String, Object> voiceConfig;
+    
+    /**
+     * 强制启用联网搜索
+     */
+    private Boolean forceWebSearch = false;
 }
